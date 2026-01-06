@@ -109,7 +109,18 @@ class FlatMachine:
         # Set up Jinja2 environment with custom filters
         from jinja2 import Environment
         import json
-        self._jinja_env = Environment()
+
+        def _json_finalize(value):
+            """Auto-serialize lists and dicts to JSON in Jinja2 output.
+
+            This ensures {{ output.items }} renders as ["a", "b"] (valid JSON)
+            instead of ['a', 'b'] (Python repr), allowing json.loads() to work.
+            """
+            if isinstance(value, (list, dict)):
+                return json.dumps(value)
+            return value
+
+        self._jinja_env = Environment(finalize=_json_finalize)
         # Add fromjson filter for parsing JSON strings in templates
         # Usage: {% for item in context.items | fromjson %}
         self._jinja_env.filters['fromjson'] = json.loads

@@ -146,6 +146,40 @@ class TestJinja2StillWorks:
         assert result == ["a", "b"]
         assert isinstance(result, list)
 
+    def test_jinja2_list_without_tojson(self):
+        """Test that lists render as JSON without explicit | tojson filter.
+
+        Previously, {{ context.my_list }} would render as ['a', 'b'] (Python repr)
+        which json.loads() can't parse. Now it renders as ["a", "b"] (valid JSON).
+        """
+        machine = FlatMachine(config_dict=get_minimal_config())
+        result = machine._render_template(
+            "{{ context.my_list }}",
+            {"context": {"my_list": ["a", "b"]}}
+        )
+        assert result == ["a", "b"]
+        assert isinstance(result, list)
+
+    def test_jinja2_dict_without_tojson(self):
+        """Test that dicts render as JSON without explicit | tojson filter."""
+        machine = FlatMachine(config_dict=get_minimal_config())
+        result = machine._render_template(
+            "{{ context.data }}",
+            {"context": {"data": {"key": "value", "num": 42}}}
+        )
+        assert result == {"key": "value", "num": 42}
+        assert isinstance(result, dict)
+
+    def test_jinja2_nested_list_without_tojson(self):
+        """Test nested lists render correctly."""
+        machine = FlatMachine(config_dict=get_minimal_config())
+        result = machine._render_template(
+            "{{ context.nested }}",
+            {"context": {"nested": [["a", "b"], ["c", "d"]]}}
+        )
+        assert result == [["a", "b"], ["c", "d"]]
+        assert isinstance(result, list)
+
     def test_jinja2_filter_expression(self):
         """Test Jinja2 filters work."""
         machine = FlatMachine(config_dict=get_minimal_config())
