@@ -13,6 +13,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from .monitoring import get_logger
+from .utils import strip_markdown_json
 from .baseagent import (
     FlatAgent as BaseFlatAgent,
     LLMBackend,
@@ -677,7 +678,8 @@ class FlatAgent:
         output = None
         if self.output_schema and content and not tools:
             try:
-                output = json.loads(content)
+                # Strip markdown fences - LLMs sometimes wrap JSON in ```json blocks
+                output = json.loads(strip_markdown_json(content))
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse JSON response: {content}")
                 output = {"_raw": content}

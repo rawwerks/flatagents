@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Tuple, Callable, List, Dict, Optional, Protocol, runtime_checkable
 
 from .monitoring import get_logger, track_operation
+from .utils import strip_markdown_json
 
 logger = get_logger(__name__)
 
@@ -349,7 +350,8 @@ class StructuredExtractor:
             return {}
 
         try:
-            parsed = json.loads(content)
+            # Strip markdown fences - LLMs sometimes wrap JSON in ```json blocks
+            parsed = json.loads(strip_markdown_json(content))
             return parsed
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse JSON response: {e}")

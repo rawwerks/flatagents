@@ -10,6 +10,7 @@ See local/flatmachines-plan.md for the full specification.
 import asyncio
 import json
 import os
+import re
 from typing import Any, Dict, Optional
 
 try:
@@ -296,13 +297,31 @@ class FlatMachine:
         self._agents[agent_name] = agent
         return agent
 
+    # Pattern for simple path references: output.foo, context.bar.baz, input.x
+    _PATH_PATTERN = re.compile(r'^(output|context|input)(\.[a-zA-Z_][a-zA-Z0-9_]*)+$')
+
+    def _resolve_path(self, path: str, variables: Dict[str, Any]) -> Any:
+        """Resolve a dotted path like 'output.chapters' to its value."""
+        parts = path.split('.')
+        value = variables
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                return None
+        return value
+
     def _render_template(self, template_str: str, variables: Dict[str, Any]) -> Any:
-        """Render a Jinja2 template string."""
+        """Render a Jinja2 template string or resolve a simple path reference."""
         if not isinstance(template_str, str):
             return template_str
 
-        # Check if it's a template
-        if '{{' not in template_str:
+        # Check if it's a template ({{ for expressions, {% for control flow)
+        if '{{' not in template_str and '{%' not in template_str:
+            # Check if it's a simple path reference like "output.chapters"
+            # This allows direct value passing without Jinja2 string conversion
+            if self._PATH_PATTERN.match(template_str.strip()):
+                return self._resolve_path(template_str.strip(), variables)
             return template_str
 
         template = self._jinja_env.from_string(template_str)

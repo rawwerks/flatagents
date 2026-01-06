@@ -94,21 +94,75 @@ class CheckpointManager:
         """Key that points to the latest snapshot."""
         return f"{self.execution_id}/latest"
 
+    def _safe_serialize_value(self, value: Any, path: str, non_serializable: List[str]) -> Any:
+        """Recursively serialize a value, converting non-JSON types to strings."""
+        if isinstance(value, dict):
+            result = {}
+            for k, v in value.items():
+                try:
+                    json.dumps({k: v})
+                    result[k] = v
+                except (TypeError, OverflowError):
+                    result[k] = self._safe_serialize_value(v, f"{path}.{k}", non_serializable)
+            return result
+        elif isinstance(value, list):
+            result = []
+            for i, item in enumerate(value):
+                try:
+                    json.dumps(item)
+                    result.append(item)
+                except (TypeError, OverflowError):
+                    result.append(self._safe_serialize_value(item, f"{path}[{i}]", non_serializable))
+            return result
+        else:
+            try:
+                json.dumps(value)
+                return value
+            except (TypeError, OverflowError):
+                original_type = type(value).__name__
+                non_serializable.append(f"{path} ({original_type})")
+                return str(value)
+
     def _safe_serialize(self, data: Dict[str, Any]) -> str:
         """Safely serialize data to JSON, handling non-serializable objects."""
         try:
             return json.dumps(data)
         except (TypeError, OverflowError):
-            # Fallback: stringify values if strict dumped fails
-            # This is a basic safety net, can be improved in v2
-            logger.warning("Context not fully JSON serializable, falling back to string conversion")
+            # Identify and warn about specific non-serializable fields
             safe_data = {}
+            non_serializable_fields: List[str] = []
+
             for k, v in data.items():
-                try:
-                    json.dumps({k: v})
-                    safe_data[k] = v
-                except (TypeError, OverflowError):
-                    safe_data[k] = str(v)
+                if isinstance(v, dict):
+                    # Recursively check nested dicts
+                    try:
+                        json.dumps(v)
+                        safe_data[k] = v
+                    except (TypeError, OverflowError):
+                        safe_data[k] = self._safe_serialize_value(v, k, non_serializable_fields)
+                elif isinstance(v, list):
+                    # Recursively check lists
+                    try:
+                        json.dumps(v)
+                        safe_data[k] = v
+                    except (TypeError, OverflowError):
+                        safe_data[k] = self._safe_serialize_value(v, k, non_serializable_fields)
+                else:
+                    try:
+                        json.dumps({k: v})
+                        safe_data[k] = v
+                    except (TypeError, OverflowError):
+                        original_type = type(v).__name__
+                        safe_data[k] = str(v)
+                        non_serializable_fields.append(f"{k} ({original_type})")
+
+            if non_serializable_fields:
+                logger.warning(
+                    f"Context fields not JSON serializable, converted to strings: "
+                    f"{', '.join(non_serializable_fields)}. "
+                    f"These values will lose type information on restore."
+                )
+
             return json.dumps(safe_data)
 
     async def save_checkpoint(self, snapshot: MachineSnapshot) -> None:
