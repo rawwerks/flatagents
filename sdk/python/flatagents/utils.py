@@ -5,32 +5,42 @@ import re
 
 def strip_markdown_json(content: str) -> str:
     """
-    Strip markdown code block fences from JSON content.
+    Extract JSON from potentially wrapped response content.
 
     LLMs sometimes wrap JSON responses in markdown code blocks like:
     ```json
     {"key": "value"}
     ```
 
-    This function removes those fences so json.loads() can parse the content.
+    Or include explanatory text before/after the JSON:
+    "Here is the result:
+    ```json
+    {"key": "value"}
+    ```"
+
+    This function extracts the JSON so json.loads() can parse it.
 
     Args:
         content: Raw string that may contain markdown-wrapped JSON
 
     Returns:
-        Cleaned string with markdown fences removed
+        Extracted JSON string
     """
     if not content:
         return content
 
     text = content.strip()
 
-    # Pattern to match ```json or ```JSON or just ``` at start
-    # and ``` at end, capturing the content in between
-    pattern = r'^```(?:json|JSON)?\s*\n?(.*?)\n?```$'
-    match = re.match(pattern, text, re.DOTALL)
-
+    # First, try to find JSON in a markdown code fence (anywhere in content)
+    fence_pattern = r'```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```'
+    match = re.search(fence_pattern, text)
     if match:
         return match.group(1).strip()
+
+    # If no fence, try to find a raw JSON object or array
+    json_pattern = r'(\{[\s\S]*\}|\[[\s\S]*\])'
+    match = re.search(json_pattern, text)
+    if match:
+        return match.group(1)
 
     return text

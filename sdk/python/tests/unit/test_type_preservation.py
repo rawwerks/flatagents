@@ -345,3 +345,34 @@ class TestMarkdownStripping:
         content = f'```json\n{json_content}\n```'
         result = strip_markdown_json(content)
         assert json.loads(result) == {"items": ["a", "b"], "nested": {"x": 1}}
+
+    def test_text_before_fence(self):
+        """Test extracting JSON when there's explanatory text before the fence."""
+        content = '''I will search for other potential hook-related files...
+```json
+{"action": "rg", "pattern": "hook"}
+```'''
+        result = strip_markdown_json(content)
+        assert result == '{"action": "rg", "pattern": "hook"}'
+        assert json.loads(result) == {"action": "rg", "pattern": "hook"}
+
+    def test_text_after_fence(self):
+        """Test extracting JSON when there's text after the fence."""
+        content = '''```json
+{"key": "value"}
+```
+Let me know if you need anything else.'''
+        result = strip_markdown_json(content)
+        assert result == '{"key": "value"}'
+
+    def test_raw_json_no_fence(self):
+        """Test extracting raw JSON object without fence."""
+        content = 'Here is the result: {"status": "ok"}'
+        result = strip_markdown_json(content)
+        assert json.loads(result) == {"status": "ok"}
+
+    def test_raw_json_array(self):
+        """Test extracting raw JSON array without fence."""
+        content = 'The items are: [1, 2, 3]'
+        result = strip_markdown_json(content)
+        assert json.loads(result) == [1, 2, 3]
