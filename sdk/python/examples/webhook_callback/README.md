@@ -306,6 +306,131 @@ For webhook backend, your service can POST to callback URL when complete:
 }
 ```
 
+## Error Handling Strategy
+
+The example implements sophisticated error handling with proper classification and retry logic.
+
+### Error Counters (Checkpointed)
+
+All counters are stored in context and checkpoint after each poll:
+
+- **`poll_count`**: Total poll attempts (success + failures)
+- **`consecutive_error_count`**: Consecutive polling errors (resets on success)
+- **`total_error_count`**: Total errors encountered during polling
+
+### Error Classification
+
+Polling errors are classified into three types:
+
+#### 1. **Client Errors (4xx)** - Likely Permanent
+```python
+# 400 Bad Request - invalid job_id format
+# 401 Unauthorized - missing/invalid API key
+# 403 Forbidden - insufficient permissions
+# 404 Not Found - job doesn't exist (wrong URL or job_id)
+# 429 Too Many Requests - rate limited
+```
+**Strategy:** Fail fast after 2 consecutive attempts
+
+#### 2. **Server Errors (5xx)** - Likely Transient
+```python
+# 500 Internal Server Error - temporary backend issue
+# 502 Bad Gateway - proxy/load balancer issue
+# 503 Service Unavailable - service temporarily down
+# 504 Gateway Timeout - upstream timeout
+```
+**Strategy:** Retry with same timeout counter (increments `poll_count`)
+
+#### 3. **Network/Transient Errors** - Temporary
+```python
+# Connection timeout
+# Connection refused/reset
+# DNS resolution failure
+# Network unreachable
+```
+**Strategy:** Retry with same timeout counter
+
+### Error Handling State Flow
+
+```
+poll_status
+    │
+    ├─ success → poll_success → process_results
+    │              (reset error counters)
+    │
+    ├─ job failed → job_failed
+    │
+    ├─ polling error → handle_poll_error
+    │                     │
+    │                     ├─ consecutive_errors >= 5 → polling_error_limit
+    │                     │
+    │                     ├─ client_error && consecutive >= 2 → polling_client_error
+    │                     │
+    │                     └─ server_error/transient → poll_delay → retry
+    │
+    └─ poll_count >= max_polls → polling_timeout
+```
+
+### Counters in Action
+
+**Scenario 1: Transient 5xx errors**
+```
+Poll 1: 503 error → consecutive_error_count=1, poll_count=1
+Poll 2: 503 error → consecutive_error_count=2, poll_count=2
+Poll 3: 200 OK (running) → consecutive_error_count=0, poll_count=3  # Reset!
+Poll 4: 200 OK (running) → consecutive_error_count=0, poll_count=4
+```
+✅ Continues polling - 5xx errors don't kill the job
+
+**Scenario 2: Permanent 404 error**
+```
+Poll 1: 404 error → consecutive_error_count=1, poll_count=1
+Poll 2: 404 error → consecutive_error_count=2, poll_count=2
+→ Exit: polling_client_error (fail fast on client errors)
+```
+❌ Stops early - likely configuration error
+
+**Scenario 3: Too many consecutive errors**
+```
+Poll 1-5: Network errors → consecutive_error_count=5, poll_count=5
+→ Exit: polling_error_limit
+```
+❌ Gives up after max consecutive errors
+
+### Configuration
+
+Control error handling behavior via input:
+
+```python
+await machine.execute(input={
+    "text": "...",
+    "max_polls": 100,  # Total attempts before timeout
+    "max_consecutive_errors": 5,  # Consecutive failures before giving up
+})
+```
+
+### Terminal States
+
+The machine can exit in multiple ways:
+
+1. **`done`** - Job completed successfully
+2. **`job_failed`** - Job itself failed (not polling)
+3. **`polling_timeout`** - Exceeded max_polls
+4. **`polling_error_limit`** - Too many consecutive polling errors
+5. **`polling_client_error`** - Client error (likely permanent)
+6. **`submission_failed`** - Failed to submit job
+
+### Why This Matters
+
+**Without error classification:**
+- One 503 error → give up immediately ❌
+- Persistent 404 → waste all retries ❌
+
+**With error classification:**
+- 5xx errors → keep trying (transient) ✅
+- 4xx errors → fail fast (permanent) ✅
+- Job still times out via `poll_count` ✅
+
 ## Design Patterns
 
 ### Pattern 1: Simple Polling

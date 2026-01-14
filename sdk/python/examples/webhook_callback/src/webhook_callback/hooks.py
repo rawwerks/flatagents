@@ -109,6 +109,8 @@ class LongRunningJobHooks(MachineHooks):
         - progress: (Optional) Progress percentage
         - result: (Optional) Result data if completed
         - error: (Optional) Error message if failed
+        - last_poll_error: Error message if polling failed
+        - poll_error_type: Error classification (transient/client_error/server_error)
         """
         job_id = context.get("job_id")
         status_url = context.get("status_url")
@@ -116,6 +118,8 @@ class LongRunningJobHooks(MachineHooks):
 
         if not job_id:
             logger.error("Cannot poll: no job_id in context")
+            context["last_poll_error"] = "No job_id in context"
+            context["poll_error_type"] = "client_error"
             return context
 
         logger.info(f"Polling job {job_id} (attempt #{poll_count + 1})")
@@ -123,6 +127,10 @@ class LongRunningJobHooks(MachineHooks):
         try:
             # Check status (single check, returns immediately)
             status_data = await self.backend.check_status(status_url, job_id)
+
+            # Clear any previous polling errors (job status check succeeded)
+            context["last_poll_error"] = None
+            context["poll_error_type"] = None
 
             # Update context with current status
             context["status"] = status_data.get("status", JobStatus.PENDING)
@@ -134,7 +142,7 @@ class LongRunningJobHooks(MachineHooks):
                 context["end_time"] = datetime.utcnow().isoformat()
                 logger.info(f"✓ Job {job_id} completed!")
 
-            # Add error if failed
+            # Add error if failed (job-level failure, not polling error)
             elif status_data.get("status") == JobStatus.FAILED:
                 context["error"] = status_data.get("error", "Unknown error")
                 context["end_time"] = datetime.utcnow().isoformat()
@@ -147,11 +155,54 @@ class LongRunningJobHooks(MachineHooks):
                 logger.info(f"  Status: {status}, Progress: {progress}%")
 
         except Exception as e:
-            logger.error(f"✗ Status check failed: {e}")
-            # Don't update status on error - will retry
-            context["poll_error"] = str(e)
+            # Classify the polling error
+            error_type = self._classify_error(e)
+            logger.error(f"✗ Status check failed ({error_type}): {e}")
+
+            # Store error information in context for state machine to handle
+            context["last_poll_error"] = str(e)
+            context["poll_error_type"] = error_type
+
+            # Don't update status on polling error
+            # State machine will handle retries based on error_type
 
         return context
+
+    def _classify_error(self, error: Exception) -> str:
+        """
+        Classify error type for retry/failure logic.
+
+        Returns:
+            - "client_error": 4xx errors - likely permanent (bad request, auth, etc)
+            - "server_error": 5xx errors - likely transient (server overload, etc)
+            - "transient": Network errors, timeouts - transient
+        """
+        import httpx
+
+        if isinstance(error, httpx.HTTPStatusError):
+            status_code = error.response.status_code
+            if 400 <= status_code < 500:
+                # 4xx client errors - usually permanent
+                # 404 = job not found (config error)
+                # 401/403 = auth (config error)
+                # 429 = rate limit (could retry, but treat as client error)
+                return "client_error"
+            elif 500 <= status_code < 600:
+                # 5xx server errors - usually transient
+                return "server_error"
+            else:
+                # 3xx redirects shouldn't reach here (httpx follows them)
+                # But if they do, treat as transient
+                return "transient"
+        elif isinstance(error, (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ReadTimeout)):
+            # Timeouts are transient
+            return "transient"
+        elif isinstance(error, (httpx.NetworkError, httpx.ConnectError)):
+            # Network errors are transient
+            return "transient"
+        else:
+            # Unknown errors - treat as transient to be safe
+            return "transient"
 
     async def on_machine_end(self, context: Dict[str, Any], output: Any) -> Any:
         """Clean up backend resources when machine completes."""

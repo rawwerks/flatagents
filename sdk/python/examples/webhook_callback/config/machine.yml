@@ -28,7 +28,14 @@ data:
     # Polling configuration
     poll_interval_seconds: "{{ input.poll_interval | default(5) }}"
     max_polls: "{{ input.max_polls | default(20) }}"
+    max_consecutive_errors: "{{ input.max_consecutive_errors | default(5) }}"
     poll_count: 0
+    consecutive_error_count: 0
+    total_error_count: 0
+
+    # Error tracking
+    last_poll_error: null
+    poll_error_type: null  # transient, client_error, server_error
 
     # Timing
     start_time: null
@@ -61,25 +68,59 @@ data:
       # Hook action: single status check (fast, < 30s)
       # State machine checkpoints after this state!
       action: poll_once
+      output_to_context:
+        poll_count: "{{ context.poll_count + 1 }}"
       transitions:
-        # Success path
+        # Success path - job completed
         - condition: "context.status == 'completed'"
-          to: process_results
+          to: poll_success
 
-        # Failure paths
+        # Job-level failure (job failed, not polling error)
         - condition: "context.status == 'failed'"
           to: job_failed
+
+        # Polling error occurred
+        - condition: "context.last_poll_error != null"
+          to: handle_poll_error
+
+        # Timeout - too many poll attempts
         - condition: "context.poll_count >= context.max_polls"
           to: polling_timeout
 
-        # Continue polling (with delay state)
+        # Continue polling (still pending/running)
+        - to: poll_delay
+
+    poll_success:
+      # Reset error counters on successful poll
+      output_to_context:
+        consecutive_error_count: 0
+        last_poll_error: null
+        poll_error_type: null
+      transitions:
+        - to: process_results
+
+    handle_poll_error:
+      # Analyze and handle polling errors
+      output_to_context:
+        consecutive_error_count: "{{ context.consecutive_error_count + 1 }}"
+        total_error_count: "{{ context.total_error_count + 1 }}"
+      transitions:
+        # Too many consecutive errors - give up
+        - condition: "context.consecutive_error_count >= context.max_consecutive_errors"
+          to: polling_error_limit
+
+        # Client error (4xx) - likely permanent, fail fast after 2 attempts
+        - condition: "context.poll_error_type == 'client_error' and context.consecutive_error_count >= 2"
+          to: polling_client_error
+
+        # Server error (5xx) or transient - retry with same timeout counter
+        # Transient errors count toward poll_count timeout but we keep retrying
         - to: poll_delay
 
     poll_delay:
-      # Brief state to add delay between polls
-      # Could sleep here, or just increment counter
+      # Brief state between polls (could add backoff logic here)
       output_to_context:
-        poll_count: "{{ context.poll_count + 1 }}"
+        last_poll_error: null  # Clear error for next attempt
       transitions:
         - to: poll_status
 
@@ -127,6 +168,29 @@ data:
         message: "Job did not complete within {{ context.max_polls }} status checks"
         last_status: "{{ context.status }}"
         last_progress: "{{ context.progress }}"
+        polls_attempted: "{{ context.poll_count }}"
+        total_errors: "{{ context.total_error_count }}"
+
+    polling_error_limit:
+      type: final
+      output:
+        status: "polling_error_limit"
+        job_id: "{{ context.job_id }}"
+        message: "Polling failed after {{ context.consecutive_error_count }} consecutive errors"
+        last_error: "{{ context.last_poll_error }}"
+        error_type: "{{ context.poll_error_type }}"
+        polls_attempted: "{{ context.poll_count }}"
+        total_errors: "{{ context.total_error_count }}"
+
+    polling_client_error:
+      type: final
+      output:
+        status: "polling_client_error"
+        job_id: "{{ context.job_id }}"
+        message: "Polling failed with client error (likely permanent)"
+        error: "{{ context.last_poll_error }}"
+        error_type: "{{ context.poll_error_type }}"
+        polls_attempted: "{{ context.poll_count }}"
 
     submission_failed:
       type: final

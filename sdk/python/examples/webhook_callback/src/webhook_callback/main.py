@@ -139,10 +139,26 @@ async def run(
         logger.warning(f"Job timed out after {result.get('polls_attempted', 0)} polls")
         logger.warning(f"Last status: {result.get('last_status', 'unknown')}")
         logger.warning(f"Last progress: {result.get('last_progress', 0)}%")
+        logger.warning(f"Total errors encountered: {result.get('total_errors', 0)}")
+
+    elif status == "polling_error_limit":
+        logger.error(f"Polling failed: {result.get('message', 'Unknown error')}")
+        logger.error(f"Last error: {result.get('last_error', 'N/A')}")
+        logger.error(f"Error type: {result.get('error_type', 'N/A')}")
+        logger.error(f"Polls attempted: {result.get('polls_attempted', 0)}")
+        logger.error(f"Total errors: {result.get('total_errors', 0)}")
+
+    elif status == "polling_client_error":
+        logger.error(f"Polling failed with client error (likely permanent)")
+        logger.error(f"Error: {result.get('error', 'N/A')}")
+        logger.error(f"Error type: {result.get('error_type', 'N/A')}")
+        logger.error(f"Polls attempted: {result.get('polls_attempted', 0)}")
+        logger.error("This is likely a configuration error (bad URL, auth, etc)")
 
     elif status == "failed":
         logger.error(f"Job failed: {result.get('error', 'Unknown error')}")
         logger.error(f"Job ID: {result.get('job_id', 'N/A')}")
+        logger.error(f"Polls attempted: {result.get('polls_attempted', 0)}")
 
     else:
         logger.error(f"Unexpected status: {status}")
