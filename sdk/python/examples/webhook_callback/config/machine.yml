@@ -1,0 +1,156 @@
+# Long-Running Job with Callback/Polling
+# Demonstrates checkpoint-safe polling pattern for jobs that take minutes/hours
+
+spec: flatmachine
+spec_version: "0.3.0"
+
+data:
+  name: long-running-job
+
+  # Initial context
+  context:
+    # Input data
+    text: "{{ input.text }}"
+    job_endpoint: "{{ input.job_endpoint | default('http://localhost:8000/jobs/submit') }}"
+
+    # Job tracking
+    job_id: null
+    status_url: null
+    callback_url: null
+    submitted_at: null
+
+    # Status tracking
+    status: null
+    progress: 0
+    result: null
+    error: null
+
+    # Polling configuration
+    poll_interval_seconds: "{{ input.poll_interval | default(5) }}"
+    max_polls: "{{ input.max_polls | default(20) }}"
+    poll_count: 0
+
+    # Timing
+    start_time: null
+    end_time: null
+
+  # Agent references
+  agents:
+    processor: ./processor.yml
+
+  # State machine with checkpoint-safe polling loop
+  states:
+    start:
+      type: initial
+      output_to_context:
+        start_time: "{{ now() }}"
+      transitions:
+        - to: submit_job
+
+    # === JOB SUBMISSION ===
+    submit_job:
+      # Hook action: submit job and get job_id (fast, < 30s)
+      action: submit_job
+      transitions:
+        - condition: "context.job_id != null"
+          to: poll_status
+        - to: submission_failed
+
+    # === POLLING LOOP (checkpoint after each iteration) ===
+    poll_status:
+      # Hook action: single status check (fast, < 30s)
+      # State machine checkpoints after this state!
+      action: poll_once
+      transitions:
+        # Success path
+        - condition: "context.status == 'completed'"
+          to: process_results
+
+        # Failure paths
+        - condition: "context.status == 'failed'"
+          to: job_failed
+        - condition: "context.poll_count >= context.max_polls"
+          to: polling_timeout
+
+        # Continue polling (with delay state)
+        - to: poll_delay
+
+    poll_delay:
+      # Brief state to add delay between polls
+      # Could sleep here, or just increment counter
+      output_to_context:
+        poll_count: "{{ context.poll_count + 1 }}"
+      transitions:
+        - to: poll_status
+
+    # === RESULT PROCESSING ===
+    process_results:
+      # Use AI agent to analyze/process the job results
+      agent: processor
+      input:
+        original_text: "{{ context.text }}"
+        job_result: "{{ context.result }}"
+        processing_time: "{{ context.end_time - context.start_time if context.end_time else 'unknown' }}"
+      output_to_context:
+        analysis: "{{ output.analysis }}"
+        summary: "{{ output.summary }}"
+        end_time: "{{ now() }}"
+      transitions:
+        - to: done
+
+    # === TERMINAL STATES ===
+    done:
+      type: final
+      output:
+        status: "success"
+        job_id: "{{ context.job_id }}"
+        original_text: "{{ context.text }}"
+        result: "{{ context.result }}"
+        analysis: "{{ context.analysis }}"
+        summary: "{{ context.summary }}"
+        polls_required: "{{ context.poll_count }}"
+        total_time: "{{ context.end_time - context.start_time if context.end_time and context.start_time else 'unknown' }}"
+
+    job_failed:
+      type: final
+      output:
+        status: "failed"
+        job_id: "{{ context.job_id }}"
+        error: "{{ context.error }}"
+        polls_attempted: "{{ context.poll_count }}"
+
+    polling_timeout:
+      type: final
+      output:
+        status: "timeout"
+        job_id: "{{ context.job_id }}"
+        message: "Job did not complete within {{ context.max_polls }} status checks"
+        last_status: "{{ context.status }}"
+        last_progress: "{{ context.progress }}"
+
+    submission_failed:
+      type: final
+      output:
+        status: "submission_failed"
+        error: "Failed to submit job to {{ context.job_endpoint }}"
+
+metadata:
+  description: "Long-running job with checkpoint-safe polling loop"
+  tags: ["webhook", "callback", "polling", "checkpointing", "long-running"]
+
+  notes: |
+    This pattern demonstrates how to handle long-running jobs that:
+    - Take minutes or hours to complete
+    - Survive process restarts via checkpointing
+    - Use polling in a state loop rather than blocking in a hook
+
+    Key design decisions:
+    - submit_job: Fast action that just gets job_id
+    - poll_status: Fast action that checks status once
+    - poll_delay: Separate state for delay/backoff
+    - Checkpoints happen between each poll iteration
+
+    If the process crashes during polling:
+    - State machine resumes at last checkpoint
+    - Continues polling the same job_id
+    - No duplicate job submissions!
