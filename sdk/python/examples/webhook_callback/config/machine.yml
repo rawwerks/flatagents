@@ -32,10 +32,12 @@ data:
     poll_count: 0
     consecutive_error_count: 0
     total_error_count: 0
+    backoff_seconds: "{{ input.initial_backoff | default(5) }}"
+    max_backoff_seconds: "{{ input.max_backoff | default(300) }}"
 
     # Error tracking
     last_poll_error: null
-    poll_error_type: null  # transient, client_error, server_error
+    poll_error_type: null  # rate_limit, auth_required, permanent, server_error, transient
 
     # Timing
     start_time: null
@@ -109,17 +111,34 @@ data:
         - condition: "context.consecutive_error_count >= context.max_consecutive_errors"
           to: polling_error_limit
 
-        # Client error (4xx) - likely permanent, fail fast after 2 attempts
-        - condition: "context.poll_error_type == 'client_error' and context.consecutive_error_count >= 2"
-          to: polling_client_error
+        # Authentication/payment required - checkpoint and pause for human intervention
+        - condition: "context.poll_error_type == 'auth_required'"
+          to: auth_intervention_required
 
-        # Server error (5xx) or transient - retry with same timeout counter
-        # Transient errors count toward poll_count timeout but we keep retrying
+        # Permanent error (404, 400, 410) - fail immediately
+        - condition: "context.poll_error_type == 'permanent'"
+          to: polling_permanent_error
+
+        # Rate limit (429, 408) - retry with exponential backoff
+        - condition: "context.poll_error_type == 'rate_limit'"
+          to: backoff_delay
+
+        # Server error (5xx) or transient - brief delay and retry
         - to: poll_delay
 
     poll_delay:
-      # Brief state between polls (could add backoff logic here)
+      # Brief delay between polls (success or transient errors)
       output_to_context:
+        last_poll_error: null  # Clear error for next attempt
+        backoff_seconds: "{{ input.initial_backoff | default(5) }}"  # Reset backoff on success path
+      transitions:
+        - to: poll_status
+
+    backoff_delay:
+      # Exponential backoff for rate limiting
+      # Each rate limit error doubles the backoff time (capped at max_backoff)
+      output_to_context:
+        backoff_seconds: "{{ [context.backoff_seconds * 2, context.max_backoff_seconds] | min }}"
         last_poll_error: null  # Clear error for next attempt
       transitions:
         - to: poll_status
@@ -182,12 +201,23 @@ data:
         polls_attempted: "{{ context.poll_count }}"
         total_errors: "{{ context.total_error_count }}"
 
-    polling_client_error:
+    auth_intervention_required:
       type: final
       output:
-        status: "polling_client_error"
+        status: "auth_intervention_required"
         job_id: "{{ context.job_id }}"
-        message: "Polling failed with client error (likely permanent)"
+        message: "Authentication or payment required. Fix the issue and resume from checkpoint."
+        error: "{{ context.last_poll_error }}"
+        error_type: "{{ context.poll_error_type }}"
+        polls_attempted: "{{ context.poll_count }}"
+        resume_instructions: "After fixing auth/payment, resume with same checkpoint-dir to continue polling this job"
+
+    polling_permanent_error:
+      type: final
+      output:
+        status: "polling_permanent_error"
+        job_id: "{{ context.job_id }}"
+        message: "Polling failed with permanent error (404/400/410)"
         error: "{{ context.last_poll_error }}"
         error_type: "{{ context.poll_error_type }}"
         polls_attempted: "{{ context.poll_count }}"

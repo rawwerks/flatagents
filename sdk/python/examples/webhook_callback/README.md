@@ -320,19 +320,32 @@ All counters are stored in context and checkpoint after each poll:
 
 ### Error Classification
 
-Polling errors are classified into three types:
+Polling errors are classified into **five** types with distinct handling strategies:
 
-#### 1. **Client Errors (4xx)** - Likely Permanent
+#### 1. **Rate Limit (429, 408)** - Retry with Backoff
 ```python
-# 400 Bad Request - invalid job_id format
-# 401 Unauthorized - missing/invalid API key
-# 403 Forbidden - insufficient permissions
-# 404 Not Found - job doesn't exist (wrong URL or job_id)
-# 429 Too Many Requests - rate limited
+# 429 Too Many Requests - API rate limit exceeded
+# 408 Request Timeout - Client-side timeout
 ```
-**Strategy:** Fail fast after 2 consecutive attempts
+**Strategy:** Exponential backoff (5s → 10s → 20s → ... → max 300s), automatic retry
 
-#### 2. **Server Errors (5xx)** - Likely Transient
+#### 2. **Auth Required (401, 402, 403)** - Checkpoint and Pause
+```python
+# 401 Unauthorized - Invalid/missing credentials
+# 402 Payment Required - Need to pay/upgrade
+# 403 Forbidden - Insufficient permissions
+```
+**Strategy:** Exit gracefully, checkpoint state, resume after human fixes issue
+
+#### 3. **Permanent (400, 404, 410)** - Fail Immediately
+```python
+# 400 Bad Request - Malformed request
+# 404 Not Found - Wrong job_id or URL
+# 410 Gone - Resource permanently deleted
+```
+**Strategy:** Fail immediately, no retry
+
+#### 4. **Server Errors (5xx)** - Likely Transient
 ```python
 # 500 Internal Server Error - temporary backend issue
 # 502 Bad Gateway - proxy/load balancer issue
@@ -341,7 +354,7 @@ Polling errors are classified into three types:
 ```
 **Strategy:** Retry with same timeout counter (increments `poll_count`)
 
-#### 3. **Network/Transient Errors** - Temporary
+#### 5. **Network/Transient Errors** - Temporary
 ```python
 # Connection timeout
 # Connection refused/reset
@@ -356,43 +369,68 @@ Polling errors are classified into three types:
 poll_status
     │
     ├─ success → poll_success → process_results
-    │              (reset error counters)
+    │              (reset error counters & backoff)
     │
     ├─ job failed → job_failed
     │
     ├─ polling error → handle_poll_error
     │                     │
-    │                     ├─ consecutive_errors >= 5 → polling_error_limit
+    │                     ├─ consecutive >= 5 → polling_error_limit
     │                     │
-    │                     ├─ client_error && consecutive >= 2 → polling_client_error
+    │                     ├─ auth_required (401/402/403) → auth_intervention_required
+    │                     │                                 (checkpoint & pause)
+    │                     │
+    │                     ├─ permanent (400/404/410) → polling_permanent_error
+    │                     │                             (fail immediately)
+    │                     │
+    │                     ├─ rate_limit (429/408) → backoff_delay → retry
+    │                     │                          (exponential backoff)
     │                     │
     │                     └─ server_error/transient → poll_delay → retry
     │
     └─ poll_count >= max_polls → polling_timeout
 ```
 
-### Counters in Action
+### Counters & Backoff in Action
 
 **Scenario 1: Transient 5xx errors**
 ```
-Poll 1: 503 error → consecutive_error_count=1, poll_count=1
-Poll 2: 503 error → consecutive_error_count=2, poll_count=2
-Poll 3: 200 OK (running) → consecutive_error_count=0, poll_count=3  # Reset!
-Poll 4: 200 OK (running) → consecutive_error_count=0, poll_count=4
+Poll 1: 503 error → consecutive=1, poll_count=1, delay=5s
+Poll 2: 503 error → consecutive=2, poll_count=2, delay=5s
+Poll 3: 200 OK (running) → consecutive=0, poll_count=3  # Reset!
+Poll 4: 200 OK (running) → consecutive=0, poll_count=4
 ```
 ✅ Continues polling - 5xx errors don't kill the job
 
-**Scenario 2: Permanent 404 error**
+**Scenario 2: Rate limiting with backoff**
 ```
-Poll 1: 404 error → consecutive_error_count=1, poll_count=1
-Poll 2: 404 error → consecutive_error_count=2, poll_count=2
-→ Exit: polling_client_error (fail fast on client errors)
+Poll 1: 429 error → consecutive=1, backoff=5s
+Poll 2: 429 error → consecutive=2, backoff=10s (doubled)
+Poll 3: 429 error → consecutive=3, backoff=20s (doubled)
+Poll 4: 200 OK → consecutive=0, backoff=5s (reset)
 ```
-❌ Stops early - likely configuration error
+✅ Exponential backoff handles rate limits gracefully
 
-**Scenario 3: Too many consecutive errors**
+**Scenario 3: Payment required (checkpoint resume)**
 ```
-Poll 1-5: Network errors → consecutive_error_count=5, poll_count=5
+Poll 1: 402 Payment Required → consecutive=1
+→ Exit: auth_intervention_required (checkpoint saved)
+[User pays and upgrades account]
+Resume: Loads checkpoint → continues polling SAME job_id
+Poll 2: 200 OK → consecutive=0
+```
+✅ Checkpoint enables human-in-loop for fixable errors
+
+**Scenario 4: Permanent 404 error**
+```
+Poll 1: 404 error → consecutive=1, poll_count=1
+→ Exit: polling_permanent_error (immediate failure)
+```
+❌ Fails fast - no point retrying wrong URL
+
+**Scenario 5: Too many consecutive errors**
+```
+Poll 1-5: Network errors → consecutive=5, poll_count=5
 → Exit: polling_error_limit
 ```
 ❌ Gives up after max consecutive errors
@@ -417,19 +455,50 @@ The machine can exit in multiple ways:
 2. **`job_failed`** - Job itself failed (not polling)
 3. **`polling_timeout`** - Exceeded max_polls
 4. **`polling_error_limit`** - Too many consecutive polling errors
-5. **`polling_client_error`** - Client error (likely permanent)
-6. **`submission_failed`** - Failed to submit job
+5. **`auth_intervention_required`** - Auth/payment needed (checkpoint and resume)
+6. **`polling_permanent_error`** - Permanent error (404/400/410)
+7. **`submission_failed`** - Failed to submit job
 
 ### Why This Matters
 
 **Without error classification:**
 - One 503 error → give up immediately ❌
+- 429 rate limit → immediate failure ❌
+- 402 payment required → fail (can't resume job) ❌
 - Persistent 404 → waste all retries ❌
 
 **With error classification:**
 - 5xx errors → keep trying (transient) ✅
-- 4xx errors → fail fast (permanent) ✅
+- 429 errors → exponential backoff (automatic) ✅
+- 401/402/403 → checkpoint and pause (human fixes, then resume) ✅
+- 404/400/410 → fail fast (permanent) ✅
 - Job still times out via `poll_count` ✅
+
+**Checkpoint Resume Pattern (Key Innovation):**
+
+When you hit 402 Payment Required:
+```bash
+# First run
+$ python -m webhook_callback.main --checkpoint-dir ./checkpoints
+# Job submitted: job-123
+# Poll 1: 402 Payment Required
+# Exit: auth_intervention_required (checkpoint saved)
+
+# [User upgrades account]
+
+# Resume run
+$ python -m webhook_callback.main --checkpoint-dir ./checkpoints
+# Loads checkpoint
+# Resumes polling job-123 (no new submission!)
+# Poll 2: 200 OK
+# ✅ Success
+```
+
+This pattern works for:
+- Payment/billing issues (402)
+- Expired credentials (401)
+- Permission changes (403)
+- Any fixable configuration error
 
 ## Design Patterns
 

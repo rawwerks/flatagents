@@ -173,20 +173,45 @@ class LongRunningJobHooks(MachineHooks):
         Classify error type for retry/failure logic.
 
         Returns:
-            - "client_error": 4xx errors - likely permanent (bad request, auth, etc)
-            - "server_error": 5xx errors - likely transient (server overload, etc)
-            - "transient": Network errors, timeouts - transient
+            - "rate_limit": 429, 408 - Needs backoff, retry automatically
+            - "auth_required": 401, 402, 403 - Needs human intervention, checkpoint and pause
+            - "permanent": 400, 404, 410 - Truly permanent, fail immediately
+            - "server_error": 5xx - Likely transient, retry
+            - "transient": Network/timeout - Temporary, retry
         """
         import httpx
 
         if isinstance(error, httpx.HTTPStatusError):
             status_code = error.response.status_code
+
             if 400 <= status_code < 500:
-                # 4xx client errors - usually permanent
-                # 404 = job not found (config error)
-                # 401/403 = auth (config error)
-                # 429 = rate limit (could retry, but treat as client error)
-                return "client_error"
+                # Classify 4xx errors more granularly
+
+                # Rate limiting - should retry with backoff
+                if status_code == 429:  # Too Many Requests
+                    return "rate_limit"
+                if status_code == 408:  # Request Timeout (client timeout)
+                    return "rate_limit"
+
+                # Authentication/authorization - needs human intervention
+                if status_code == 401:  # Unauthorized (bad/missing credentials)
+                    return "auth_required"
+                if status_code == 402:  # Payment Required
+                    return "auth_required"
+                if status_code == 403:  # Forbidden (insufficient permissions)
+                    return "auth_required"
+
+                # Permanent errors - no point retrying
+                if status_code == 400:  # Bad Request (malformed request)
+                    return "permanent"
+                if status_code == 404:  # Not Found (wrong job_id or URL)
+                    return "permanent"
+                if status_code == 410:  # Gone (resource deleted)
+                    return "permanent"
+
+                # Other 4xx - treat as permanent by default
+                return "permanent"
+
             elif 500 <= status_code < 600:
                 # 5xx server errors - usually transient
                 return "server_error"
@@ -194,6 +219,7 @@ class LongRunningJobHooks(MachineHooks):
                 # 3xx redirects shouldn't reach here (httpx follows them)
                 # But if they do, treat as transient
                 return "transient"
+
         elif isinstance(error, (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ReadTimeout)):
             # Timeouts are transient
             return "transient"

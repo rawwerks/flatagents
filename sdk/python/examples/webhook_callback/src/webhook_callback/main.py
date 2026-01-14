@@ -148,12 +148,28 @@ async def run(
         logger.error(f"Polls attempted: {result.get('polls_attempted', 0)}")
         logger.error(f"Total errors: {result.get('total_errors', 0)}")
 
-    elif status == "polling_client_error":
-        logger.error(f"Polling failed with client error (likely permanent)")
+    elif status == "auth_intervention_required":
+        logger.warning("=" * 70)
+        logger.warning("⚠️  AUTHENTICATION/PAYMENT REQUIRED")
+        logger.warning("=" * 70)
+        logger.warning(f"Error: {result.get('error', 'N/A')}")
+        logger.warning(f"Job ID: {result.get('job_id', 'N/A')}")
+        logger.warning(f"Polls attempted: {result.get('polls_attempted', 0)}")
+        logger.warning("")
+        logger.warning("📋 TO RESUME:")
+        logger.warning("1. Fix the authentication or payment issue")
+        logger.warning("2. Re-run with the SAME checkpoint directory:")
+        logger.warning(f"   python -m webhook_callback.main --checkpoint-dir {checkpoint_dir or './checkpoints'}")
+        logger.warning("3. The machine will resume polling the SAME job (no duplicate submission)")
+        logger.warning("=" * 70)
+
+    elif status == "polling_permanent_error":
+        logger.error(f"Polling failed with permanent error")
         logger.error(f"Error: {result.get('error', 'N/A')}")
         logger.error(f"Error type: {result.get('error_type', 'N/A')}")
+        logger.error(f"Job ID: {result.get('job_id', 'N/A')}")
         logger.error(f"Polls attempted: {result.get('polls_attempted', 0)}")
-        logger.error("This is likely a configuration error (bad URL, auth, etc)")
+        logger.error("This is likely a configuration error (wrong URL, malformed request, etc)")
 
     elif status == "failed":
         logger.error(f"Job failed: {result.get('error', 'Unknown error')}")
