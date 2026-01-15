@@ -1,24 +1,24 @@
 # FlatAgents Human-in-the-Loop Example
 
-Demonstrates how to integrate human approval and decision-making into FlatAgent workflows using custom hooks.
+Demonstrates how to integrate human approval and feedback into FlatAgent workflows using custom hooks.
 
 ## What It Does
 
-- Generates a task plan using an AI agent
-- Pauses execution to show the plan to a human
-- Waits for human approval (yes/no)
-- Either proceeds with execution or regenerates the plan
+- Generates a short draft using an AI agent
+- Pauses execution to show the draft to a human
+- Waits for approval or feedback
+- Either finishes or revises the draft
 
 ## Features Demonstrated
 
 ### Custom Hooks
-- `onStateEnter`: Intercept state transitions for human interaction
+- `onStateEnter`: Intercept the review state for human interaction
 - Interactive input using Node.js readline
-- Context modification based on human decisions
+- Context modification based on human approval or feedback
 
 ### Conditional Flow
 - Approval gates that require human input
-- Loop back for plan regeneration if rejected
+- Loop back for draft revision if feedback provided
 - Continue execution if approved
 
 ## Quick Start
@@ -33,22 +33,16 @@ Demonstrates how to integrate human approval and decision-making into FlatAgent 
 ```bash
 # Use local flatagents package (for development)
 ./run.sh --local
-
-# Run in development mode with tsx
-./run.sh --dev
-
-# Show help
-./run.sh --help
 ```
 
-⚠️ **Important**: This demo is interactive! You'll need to type "yes" or "no" when prompted.
+⚠️ **Important**: This demo is interactive! You'll need to approve or provide feedback when prompted.
 
 ## File Structure
 
 ```
 human-in-the-loop/
 ├── config/
-│   ├── task_agent.yml       # Agent that generates plans
+│   ├── drafter.yml          # Agent that generates drafts
 │   └── machine.yml          # State machine with approval flow
 ├── src/
 │   └── human-in-the-loop/
@@ -61,18 +55,18 @@ human-in-the-loop/
 ## How It Works
 
 ### State Machine Flow
-1. **generate_plan**: AI agent creates a task plan
-2. **approval**: Human reviews and approves/rejects the plan
-3. **execute**: If approved, executes the plan
-4. **Loop**: If rejected, goes back to step 1
+1. **generate_draft**: AI agent creates a draft
+2. **await_human_review**: Human approves or provides feedback
+3. **done**: If approved, returns the draft
+4. **Loop**: If feedback provided, the agent revises
 
 ### Custom Hooks
 ```typescript
 class HumanInLoopHooks implements MachineHooks {
   async onStateEnter(state: string, context: any) {
-    if (state === 'approval') {
-      const approved = await this.askQuestion('Approve this plan? (yes/no): ');
-      context.approved = approved.toLowerCase().startsWith('y');
+    if (state === 'await_human_review') {
+      const approved = await this.askQuestion('Approve? (y/yes or feedback): ');
+      context.human_approved = approved.toLowerCase().startsWith('y');
     }
     return context;
   }
@@ -81,11 +75,11 @@ class HumanInLoopHooks implements MachineHooks {
 
 ### Conditional Transitions
 ```yaml
-approval:
+await_human_review:
   transitions:
-    - condition: "context.approved"
-      to: execute
-    - to: generate_plan
+    - condition: "context.human_approved == true"
+      to: done
+    - to: generate_draft
 ```
 
 ## Expected Interaction

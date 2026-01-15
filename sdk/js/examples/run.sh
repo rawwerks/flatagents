@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 function show_help() {
     echo "FlatAgents Examples Runner"
     echo ""
-    echo "Usage: $0 [example-name] [--dev] [--local]"
+    echo "Usage: $0 [example-name] [--local]"
     echo ""
     echo "Examples:"
     echo "  helloworld          Simple Hello World demo"
@@ -24,7 +24,6 @@ function show_help() {
     echo "  peering             Distributed processing demo"
     echo ""
     echo "Options:"
-    echo "  --dev     Run in development mode"
     echo "  --local   Use local flatagents package"
     echo "  --help    Show this help message"
     echo ""
@@ -63,17 +62,12 @@ function run_example() {
 
 # Parse arguments
 EXAMPLE=""
-DEV=""
 LOCAL=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         helloworld|parallelism|human-in-the-loop|peering)
             EXAMPLE="$1"
-            shift
-            ;;
-        --dev)
-            DEV="--dev"
             shift
             ;;
         --local)
@@ -95,5 +89,5 @@ done
 if [ -z "$EXAMPLE" ]; then
     show_help
 else
-    run_example "$EXAMPLE" $DEV $LOCAL
+    run_example "$EXAMPLE" $LOCAL
 fi

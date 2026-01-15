@@ -1,92 +1,58 @@
 #!/bin/bash
-
-# FlatAgents Human-in-the-Loop Demo Runner
-# Handles setup and execution similar to Python examples
-
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-LOCAL=false
-DEV_MODE=false
-
-# Parse command line arguments
+# --- Parse Arguments ---
+LOCAL_INSTALL=false
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --local)
-      LOCAL=true
-      echo -e "${GREEN}Using local flatagents package${NC}"
-      shift
-      ;;
-    --dev)
-      DEV_MODE=true
-      echo -e "${GREEN}Running in development mode${NC}"
-      shift
-      ;;
-    -h|--help)
-      echo "Usage: $0 [--local] [--dev]"
-      echo ""
-      echo "Options:"
-      echo "  --local    Use local flatagents package (for development)"
-      echo "  --dev      Run in development mode with tsx"
-      echo "  --help     Show this help message"
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
+    case $1 in
+        --local|-l)
+            LOCAL_INSTALL=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
 done
 
-echo -e "${GREEN}🔧 Setting up FlatAgents Human-in-the-Loop Demo${NC}"
+echo "--- FlatAgent Human-in-the-Loop Demo Runner ---"
 
-# Check if Node.js is installed
+# Get the directory the script is located in
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# 0. Ensure Node.js and npm are installed
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}❌ Node.js is not installed. Please install Node.js first.${NC}"
+    echo "❌ Node.js is not installed. Please install Node.js first."
     exit 1
 fi
 
-# Check if npm is installed
 if ! command -v npm &> /dev/null; then
-    echo -e "${RED}❌ npm is not installed. Please install npm first.${NC}"
+    echo "❌ npm is not installed. Please install npm first."
     exit 1
 fi
 
-# Install dependencies
-echo -e "${YELLOW}📦 Installing dependencies...${NC}"
-npm install
-
-# Build the main package if --local is specified
-if [ "$LOCAL" = true ]; then
-    echo -e "${YELLOW}🏗️  Building local flatagents package...${NC}"
+# 1. Install Dependencies
+echo "📦 Installing dependencies..."
+if [ "$LOCAL_INSTALL" = true ]; then
+    echo "  - Building flatagents from local source..."
     cd ../../
     npm run build
-    cd examples/human-in-the-loop
-    npm install
+    cd "$SCRIPT_DIR"
 fi
 
-# Build TypeScript
-echo -e "${YELLOW}🏗️  Building TypeScript...${NC}"
+echo "  - Installing human-in-the-loop demo package..."
+npm install
+
+# 2. Build TypeScript
+echo "🏗️  Building TypeScript..."
 npm run build
 
-# Run the demo
-echo -e "${GREEN}🚀 Running Human-in-the-Loop Demo...${NC}"
-echo ""
-echo -e "${YELLOW}⚠️  This demo requires interactive input!${NC}"
-echo ""
+# 3. Run the Demo
+echo "🚀 Running demo..."
+echo "⚠️  This demo requires interactive input!"
+echo "---"
+node dist/human-in-the-loop/main.js
+echo "---"
 
-if [ "$DEV_MODE" = true ]; then
-    # Development mode with tsx
-    npx tsx src/human-in-the-loop/main.ts
-else
-    # Production mode with built JavaScript
-    node dist/human-in-the-loop/main.js
-fi
-
-echo ""
-echo -e "${GREEN}✅ Demo completed!${NC}"
+echo "✅ Demo complete!"

@@ -52,14 +52,6 @@ cd example-name
 ./run.sh
 ```
 
-### Development Mode
-For development with hot reloading:
-
-```bash
-cd example-name
-./run.sh --dev
-```
-
 ### Local Development
 To test with the local flatagents source:
 
@@ -118,15 +110,6 @@ Configure LLM agents with:
 - System/user prompts
 - Output schemas
 - MCP tool integration
-
-## Getting Help
-
-Each example supports:
-
-```bash
-cd example-name
-./run.sh --help
-```
 
 ## Common Issues
 

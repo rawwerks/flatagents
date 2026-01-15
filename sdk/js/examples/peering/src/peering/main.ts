@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { FlatMachine, MemoryBackend, inMemoryResultBackend } from '../../src';
+import { FlatMachine, MemoryBackend, inMemoryResultBackend } from 'flatagents';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const rootDir = join(__dirname, '..', '..');
+const configDir = join(rootDir, 'config');
 
 async function main() {
   // Set up persistence and result backends for peering
@@ -15,8 +17,8 @@ async function main() {
   console.log('Launching orchestrator with worker nodes...\n');
 
   const orchestrator = new FlatMachine({
-    config: join(__dirname, 'orchestrator.yml'),
-    configDir: __dirname,
+    config: join(configDir, 'orchestrator.yml'),
+    configDir,
     persistence: persistenceBackend,
     resultBackend: resultBackend,
   });
@@ -29,8 +31,8 @@ async function main() {
     // Simulate worker node processing independently
     console.log('\n=== Worker Node Processing ===');
     const workerNode = new FlatMachine({
-      config: join(__dirname, 'worker_node.yml'),
-      configDir: __dirname,
+      config: join(configDir, 'worker_node.yml'),
+      configDir,
       persistence: persistenceBackend,
       resultBackend: resultBackend,
     });

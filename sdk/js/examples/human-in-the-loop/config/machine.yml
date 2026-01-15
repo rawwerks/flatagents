@@ -1,28 +1,70 @@
+# Human-in-the-Loop Machine
+# Demonstrates pausing for human approval before proceeding
+
 spec: flatmachine
-spec_version: "1.0"
+spec_version: "0.3.0"
+
 data:
-  name: human_in_loop_demo
-  context: {}
+  name: human-in-loop
+  
+  # Initial context
+  context:
+    topic: "{{ input.topic }}"
+    draft: null
+    human_approved: false
+    max_revisions: "{{ input.max_revisions | default(3) }}"
+    revision_count: 0
+  
+  # Agent references
+  agents:
+    drafter: ./drafter.yml
+  
+  # State machine
   states:
-    generate_plan:
+    start:
       type: initial
-      agent: task_agent.yml
+      transitions:
+        - to: generate_draft
+    
+    generate_draft:
+      agent: drafter
+      execution:
+        type: retry
+        backoffs: [2, 8, 16]
       input:
-        request: "{{ input.request }}"
+        topic: "{{ context.topic }}"
+        previous_draft: "{{ context.draft }}"
+        feedback: "{{ context.human_feedback }}"
       output_to_context:
-        plan: "{{ output.plan }}"
+        draft: "{{ output.content }}"
+        revision_count: "{{ context.revision_count + 1 }}"
       transitions:
-        - to: approval
-    approval:
-      type: initial
+        - to: await_human_review
+    
+    await_human_review:
+      # This state pauses for human input via the hook
+      action: human_review
       transitions:
-        - condition: "context.approved"
-          to: execute
-        - to: generate_plan
-    execute:
+        - condition: "context.human_approved == true"
+          to: done
+        - condition: "context.revision_count >= context.max_revisions"
+          to: max_revisions_reached
+        - to: generate_draft
+    
+    max_revisions_reached:
       type: final
-      agent: task_agent.yml
-      input:
-        request: "Execute this approved plan: {{ context.plan }}"
       output:
-        result: "{{ output }}"
+        content: "{{ context.draft }}"
+        status: "max_revisions_reached"
+        revisions: "{{ context.revision_count }}"
+    
+    done:
+      type: final
+      output:
+        content: "{{ context.draft }}"
+        status: "approved"
+        revisions: "{{ context.revision_count }}"
+
+metadata:
+  description: "Human-in-the-loop content approval workflow"
+  tags: ["human-in-loop", "approval"]

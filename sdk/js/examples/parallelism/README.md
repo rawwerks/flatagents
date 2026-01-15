@@ -4,18 +4,21 @@ Demonstrates parallel execution capabilities in FlatAgents including machine arr
 
 ## Features Demonstrated
 
-### 1. Parallel Machines
+### 1. Parallel Machine Execution
 Run multiple machines simultaneously:
-- Legal review
-- Technical review  
-- Financial review
-All process the same document in parallel.
+- Sentiment analysis
+- Text summarization
 
 ### 2. ForEach Dynamic Parallelism
-Process an array of documents in parallel:
-- Each document processed independently
+Process an array of texts in parallel:
+- Each text analyzed independently
 - Results collected into an array
 - Dynamic scaling based on input size
+
+### 3. Fire-and-Forget Launches
+Launch background notification formatting:
+- Non-blocking launches
+- Results available in the backend
 
 ## Quick Start
 
@@ -29,12 +32,6 @@ Process an array of documents in parallel:
 ```bash
 # Use local flatagents package (for development)
 ./run.sh --local
-
-# Run in development mode with tsx
-./run.sh --dev
-
-# Show help
-./run.sh --help
 ```
 
 ## File Structure
@@ -42,13 +39,14 @@ Process an array of documents in parallel:
 ```
 parallelism/
 ├── config/
-│   ├── reviewer.yml         # Agent configuration
-│   ├── main_machine.yml     # Parallel machines demo
-│   ├── legal_review.yml     # Legal review machine
-│   ├── technical_review.yml # Technical review machine
-│   ├── financial_review.yml # Financial review machine
-│   ├── foreach_machine.yml  # Foreach demo machine
-│   └── doc_processor.yml    # Document processor machine
+│   ├── machine.yml             # Main parallelism machine
+│   ├── sentiment_machine.yml   # Sentiment machine wrapper
+│   ├── summarizer_machine.yml  # Summarizer machine wrapper
+│   ├── notification_machine.yml # Notification machine wrapper
+│   ├── sentiment_agent.yml     # Sentiment agent
+│   ├── summarizer_agent.yml    # Summarizer agent
+│   ├── notifier_agent.yml      # Notification agent
+│   └── aggregator_agent.yml    # Aggregator agent
 ├── src/
 │   └── parallelism/
 │       └── main.ts          # Demo application
@@ -62,34 +60,43 @@ parallelism/
 ### Parallel Machines Pattern
 ```yaml
 states:
-  parallel_review:
-    machine: [legal_review, technical_review, financial_review]
+  parallel_aggregate:
+    machine: [summarizer_machine.yml, sentiment_machine.yml]
     input:
-      document: "{{ context.document }}"
+      texts: "{{ context.texts }}"
     output_to_context:
-      reviews: "{{ output }}"
+      parallel_results: "{{ output }}"
 ```
 
 ### ForEach Pattern
 ```yaml
 states:
-  process_all:
-    foreach: "{{ context.documents }}"
-    as: doc
-    machine: doc_processor.yml
+  foreach_analysis:
+    foreach: "{{ context.texts }}"
+    as: text
+    machine: sentiment_machine.yml
     input:
-      document: "{{ doc.content }}"
-      name: "{{ doc.name }}"
+      text: "{{ text }}"
     output_to_context:
-      results: "{{ output }}"
+      sentiment_results: "{{ output }}"
+```
+
+### Fire-and-Forget Pattern
+```yaml
+states:
+  launch_notifications:
+    launch: notification_machine.yml
+    launch_input:
+      message: "{{ context.message }}"
+      recipients: ["admin@example.com", "user@example.com"]
 ```
 
 ## Expected Output
 
 You'll see:
-1. **Parallel Machines**: Three reviews completed simultaneously
-2. **ForEach Demo**: Three documents processed in parallel
-3. Performance benefits of parallel execution
+1. **Parallel Machines**: Summarization + sentiment in parallel
+2. **ForEach Demo**: Sentiment analysis for each text
+3. **Fire-and-Forget**: Background notification formatting
 
 ## Learn More
 

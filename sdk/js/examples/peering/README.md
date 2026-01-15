@@ -31,12 +31,6 @@ Demonstrates machine-to-machine communication, persistence, and checkpointing in
 ```bash
 # Use local flatagents package (for development)
 ./run.sh --local
-
-# Run in development mode with tsx
-./run.sh --dev
-
-# Show help
-./run.sh --help
 ```
 
 ## File Structure
