@@ -4,27 +4,27 @@ import { join, dirname } from 'path';
 
 export class MemoryBackend implements PersistenceBackend {
   private store = new Map<string, MachineSnapshot>();
-  
+
   async save(key: string, snapshot: MachineSnapshot): Promise<void> {
     this.store.set(key, snapshot);
   }
-  
+
   async load(key: string): Promise<MachineSnapshot | null> {
     return this.store.get(key) ?? null;
   }
-  
+
   async delete(key: string): Promise<void> {
     this.store.delete(key);
   }
-  
+
   async list(prefix: string): Promise<string[]> {
     return [...this.store.keys()].filter(k => k.startsWith(prefix));
   }
 }
 
 export class LocalFileBackend implements PersistenceBackend {
-  constructor(private dir = ".checkpoints") {}
-  
+  constructor(private dir = ".checkpoints") { }
+
   private async ensureDir(path: string): Promise<void> {
     try {
       await fs.mkdir(dirname(path), { recursive: true });
@@ -32,21 +32,21 @@ export class LocalFileBackend implements PersistenceBackend {
       // Directory might already exist
     }
   }
-  
+
   private getPath(key: string): string {
     return join(this.dir, `${key}.json`);
   }
-  
+
   async save(key: string, snapshot: MachineSnapshot): Promise<void> {
     const path = this.getPath(key);
     await this.ensureDir(path);
     const tempPath = `${path}.tmp`;
-    
+
     // Write to temp file first, then rename for atomicity
     await fs.writeFile(tempPath, JSON.stringify(snapshot, null, 2));
     await fs.rename(tempPath, path);
   }
-  
+
   async load(key: string): Promise<MachineSnapshot | null> {
     try {
       const path = this.getPath(key);
@@ -56,7 +56,7 @@ export class LocalFileBackend implements PersistenceBackend {
       return null;
     }
   }
-  
+
   async delete(key: string): Promise<void> {
     try {
       const path = this.getPath(key);
@@ -65,7 +65,7 @@ export class LocalFileBackend implements PersistenceBackend {
       // File might not exist
     }
   }
-  
+
   async list(prefix: string): Promise<string[]> {
     try {
       const files = await fs.readdir(this.dir, { recursive: true }) as string[];
@@ -80,13 +80,13 @@ export class LocalFileBackend implements PersistenceBackend {
 }
 
 export class CheckpointManager {
-  constructor(private backend: PersistenceBackend) {}
-  
+  constructor(private backend: PersistenceBackend) { }
+
   async checkpoint(snapshot: MachineSnapshot): Promise<void> {
-    const key = `${snapshot.executionId}/step_${String(snapshot.step).padStart(6, "0")}`;
+    const key = `${snapshot.execution_id}/step_${String(snapshot.step).padStart(6, "0")}`;
     await this.backend.save(key, snapshot);
   }
-  
+
   async restore(executionId: string): Promise<MachineSnapshot | null> {
     const keys = await this.backend.list(executionId);
     if (!keys.length) return null;

@@ -30,8 +30,8 @@ export interface MachineConfig {
     agents?: Record<string, string>;
     machines?: Record<string, string | MachineConfig | MachineWrapper | MachineReference>;
     states: Record<string, State>;
-    settings?: { max_steps?: number; [key: string]: any };
-    persistence?: { enabled: boolean; backend: "local" | "memory" | "redis" | string; checkpoint_on?: string[]; [key: string]: any };
+    settings?: { max_steps?: number;[key: string]: any };
+    persistence?: { enabled: boolean; backend: "local" | "memory" | "redis" | string; checkpoint_on?: string[];[key: string]: any };
   };
 }
 
@@ -57,22 +57,39 @@ export interface State {
   sampling?: "single" | "multi";
 }
 
+// Matches flatmachine.d.ts:333-351 exactly
 export interface MachineSnapshot {
-  executionId: string;
-  machineName: string;
-  currentState: string;
+  execution_id: string;
+  machine_name: string;
+  spec_version: string;
+  current_state: string;
   context: Record<string, any>;
   step: number;
-  createdAt: string;
-  parentExecutionId?: string;
+  created_at: string;
   event?: string;
   output?: Record<string, any>;
+  total_api_calls?: number;
+  total_cost?: number;
+  parent_execution_id?: string;
+  pending_launches?: LaunchIntent[];
 }
 
+// Matches flatmachine.d.ts:326-331
+export interface LaunchIntent {
+  execution_id: string;
+  machine: string;
+  input: Record<string, any>;
+  launched: boolean;
+}
+
+// Matches flatagent.d.ts:154-161
 export interface MCPServer {
   command?: string;
   args?: string[];
+  env?: Record<string, string>;
   serverUrl?: string;
+  headers?: Record<string, string>;
+  timeout?: number;
 }
 
 export interface ToolFilter {

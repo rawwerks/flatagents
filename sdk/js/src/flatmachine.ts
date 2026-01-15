@@ -2,14 +2,14 @@ import * as nunjucks from "nunjucks";
 import * as yaml from "yaml";
 import { readFileSync } from "fs";
 import { randomUUID } from "node:crypto";
-import { 
-  MachineConfig, 
-  MachineOptions, 
-  MachineHooks, 
-  PersistenceBackend, 
-  ResultBackend, 
-  State, 
-  MachineSnapshot 
+import {
+  MachineConfig,
+  MachineOptions,
+  MachineHooks,
+  PersistenceBackend,
+  ResultBackend,
+  State,
+  MachineSnapshot
 } from './types';
 import { FlatAgent } from './flatagent';
 import { getExecutionType } from './execution';
@@ -48,23 +48,35 @@ export class FlatMachine {
     }
   }
 
-  async execute(input?: Record<string, any>): Promise<any> {
+  async execute(input?: Record<string, any>, resumeSnapshot?: MachineSnapshot): Promise<any> {
     if (this.config.data.expression_engine === "cel") {
       throw new Error("expression_engine 'cel' is not supported in the JS SDK yet");
     }
 
-    // Initialize context from config + input
-    this.input = input ?? {};
-    this.context = this.render(this.config.data.context ?? {}, { input: this.input });
-    this.context = await this.hooks?.onMachineStart?.(this.context) ?? this.context;
+    let state: string;
+    let steps: number;
 
-    let state = this.findInitialState();
-    let steps = 0;
-    const maxSteps = this.config.data.settings?.max_steps ?? 100;
+    if (resumeSnapshot) {
+      // Resume from checkpoint - restore state instead of reinitializing
+      this.executionId = resumeSnapshot.execution_id;
+      this.context = resumeSnapshot.context;
+      state = resumeSnapshot.current_state;
+      steps = resumeSnapshot.step;
+      // Don't call onMachineStart when resuming
+    } else {
+      // Fresh execution - initialize context from config + input
+      this.input = input ?? {};
+      this.context = this.render(this.config.data.context ?? {}, { input: this.input });
+      this.context = await this.hooks?.onMachineStart?.(this.context) ?? this.context;
+      state = this.findInitialState();
+      steps = 0;
 
-    if (this.shouldCheckpoint("machine_start")) {
-      await this.checkpoint(state, steps, "machine_start");
+      if (this.shouldCheckpoint("machine_start")) {
+        await this.checkpoint(state, steps, "machine_start");
+      }
     }
+
+    const maxSteps = this.config.data.settings?.max_steps ?? 100;
 
     while (steps++ < maxSteps) {
       const def = this.config.data.states[state];
@@ -139,12 +151,8 @@ export class FlatMachine {
   async resume(executionId: string): Promise<any> {
     const snapshot = await this.checkpointManager?.restore(executionId);
     if (!snapshot) throw new Error(`No checkpoint for ${executionId}`);
-    this.executionId = snapshot.executionId;
-    this.context = snapshot.context;
-    // Continue from snapshot.currentState...
-    // This is a simplified implementation - in the full version, 
-    // we'd continue execution from the checkpoint point
-    return this.execute();
+    // Pass snapshot to execute so it resumes from that state instead of reinitializing
+    return this.execute(undefined, snapshot);
   }
 
   private findInitialState(): string {
@@ -241,7 +249,7 @@ export class FlatMachine {
       const input = this.render(def.launch_input ?? {}, { context: this.context, input: this.input });
       const machine = this.createMachine(name);
       // Fire and forget
-      machine.execute(input).catch(() => {});
+      machine.execute(input).catch(() => { });
     }
   }
 
@@ -258,12 +266,13 @@ export class FlatMachine {
   private async checkpoint(state: string, step: number, event?: string, output?: any): Promise<void> {
     if (!this.checkpointManager) return;
     await this.checkpointManager.checkpoint({
-      executionId: this.executionId,
-      machineName: this.config.data.name ?? "unnamed",
-      currentState: state,
+      execution_id: this.executionId,
+      machine_name: this.config.data.name ?? "unnamed",
+      spec_version: this.config.spec_version ?? "0.4.0",
+      current_state: state,
       context: this.context,
       step,
-      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
       event,
       output,
     });
