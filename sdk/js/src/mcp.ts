@@ -6,15 +6,31 @@ export class MCPToolProvider {
   private clients = new Map<string, Client>();
 
   async connect(servers: Record<string, MCPServer>): Promise<void> {
+    if (!servers || typeof servers !== 'object') {
+      return;
+    }
+
     for (const [name, server] of Object.entries(servers)) {
-      if (server.command) {
-        const transport = new StdioClientTransport({ 
-          command: server.command, 
-          args: server.args || [] 
+      if (!name || !server || typeof server !== 'object') {
+        continue;
+      }
+
+      const command = typeof server.command === 'string' ? server.command.trim() : '';
+      if (!command) {
+        continue;
+      }
+
+      try {
+        const transport = new StdioClientTransport({
+          command,
+          args: server.args || [],
+          env: server.env
         });
         const client = new Client({ name, version: "1.0.0" });
         await client.connect(transport);
         this.clients.set(name, client);
+      } catch {
+        // Swallow connection failures to allow best-effort startup.
       }
     }
   }

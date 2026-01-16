@@ -139,6 +139,7 @@ export interface MachineOptions {
   hooks?: MachineHooks;
   persistence?: PersistenceBackend;
   resultBackend?: ResultBackend;
+  executionLock?: ExecutionLock;
   configDir?: string;
 }
 
@@ -156,4 +157,17 @@ export interface MachineWrapper {
   spec: "flatmachine";
   spec_version: string;
   data: MachineConfig["data"];
+}
+
+// =============================================================================
+// Runtime Interfaces (see flatagents-runtime.d.ts for canonical definitions)
+// =============================================================================
+
+/**
+ * Prevents concurrent execution of the same machine instance.
+ * See flatagents-runtime.d.ts for spec.
+ */
+export interface ExecutionLock {
+  acquire(key: string): Promise<boolean>;
+  release(key: string): Promise<void>;
 }

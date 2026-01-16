@@ -8,6 +8,7 @@ import {
   MachineHooks,
   PersistenceBackend,
   ResultBackend,
+  ExecutionLock,
   State,
   MachineSnapshot
 } from './types';
@@ -15,6 +16,7 @@ import { FlatAgent } from './flatagent';
 import { getExecutionType } from './execution';
 import { evaluate } from './expression';
 import { CheckpointManager, LocalFileBackend, MemoryBackend } from './persistence';
+import { NoOpLock } from './locking';
 
 export class FlatMachine {
   public config: MachineConfig;
@@ -25,6 +27,7 @@ export class FlatMachine {
   private hooks?: MachineHooks;
   private checkpointManager?: CheckpointManager;
   private resultBackend?: ResultBackend;
+  private executionLock: ExecutionLock;
   private configDir: string;
   private checkpointEvents = new Set<string>();
 
@@ -34,6 +37,7 @@ export class FlatMachine {
       : options.config;
     this.hooks = options.hooks;
     this.resultBackend = options.resultBackend;
+    this.executionLock = options.executionLock ?? new NoOpLock();
     this.configDir = options.configDir ?? process.cwd();
     if (options.persistence) {
       this.checkpointManager = new CheckpointManager(options.persistence);
@@ -53,6 +57,21 @@ export class FlatMachine {
       throw new Error("expression_engine 'cel' is not supported in the JS SDK yet");
     }
 
+    // Acquire execution lock
+    const lockKey = resumeSnapshot?.execution_id ?? this.executionId;
+    const lockAcquired = await this.executionLock.acquire(lockKey);
+    if (!lockAcquired) {
+      throw new Error(`Execution ${lockKey} is already running`);
+    }
+
+    try {
+      return await this.executeInternal(input, resumeSnapshot);
+    } finally {
+      await this.executionLock.release(lockKey);
+    }
+  }
+
+  private async executeInternal(input?: Record<string, any>, resumeSnapshot?: MachineSnapshot): Promise<any> {
     let state: string;
     let steps: number;
 

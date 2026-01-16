@@ -1,34 +1,62 @@
-import { generateText, LanguageModel } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createCerebras } from "@ai-sdk/cerebras";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import * as nunjucks from "nunjucks";
 import * as yaml from "yaml";
 import { readFileSync } from 'fs';
 import { AgentConfig } from './types';
 import { MCPToolProvider } from './mcp';
+import { LLMBackend, Message, VercelAIBackend } from './llm';
 
-// Known provider base URLs for OpenAI-compatible providers
-const PROVIDER_BASE_URLS: Record<string, string> = {
-  cerebras: "https://api.cerebras.ai/v1",
-  groq: "https://api.groq.com/openai/v1",
-  together: "https://api.together.xyz/v1",
-  fireworks: "https://api.fireworks.ai/inference/v1",
-  deepseek: "https://api.deepseek.com/v1",
-  mistral: "https://api.mistral.ai/v1",
-  perplexity: "https://api.perplexity.ai",
-};
+/**
+ * Options for constructing a FlatAgent with custom backends.
+ */
+export interface AgentOptions {
+  /** Path to YAML config file or inline AgentConfig */
+  config: string | AgentConfig;
+
+  /** Custom LLM backend (if not provided, uses VercelAIBackend based on config) */
+  llmBackend?: LLMBackend;
+
+  /** Base directory for resolving relative paths */
+  configDir?: string;
+}
 
 export class FlatAgent {
   public config: AgentConfig;
   private mcpProvider?: MCPToolProvider;
-  private model?: LanguageModel;
+  private llmBackend?: LLMBackend;
 
-  constructor(configOrPath: AgentConfig | string) {
-    this.config = typeof configOrPath === "string"
-      ? yaml.parse(readFileSync(configOrPath, "utf-8")) as AgentConfig
-      : configOrPath;
+  /**
+   * Create a FlatAgent.
+   *
+   * @param configOrOptions - Config path, config object, or AgentOptions
+   */
+  constructor(configOrOptions: AgentConfig | string | AgentOptions) {
+    if (configOrOptions && typeof configOrOptions === 'object' && 'config' in configOrOptions && !('spec' in configOrOptions)) {
+      // AgentOptions provided
+      const options = configOrOptions as AgentOptions;
+      this.config = typeof options.config === 'string'
+        ? yaml.parse(readFileSync(options.config, 'utf-8')) as AgentConfig
+        : options.config;
+      this.llmBackend = options.llmBackend;
+    } else if (typeof configOrOptions === 'string') {
+      // Path provided
+      this.config = yaml.parse(readFileSync(configOrOptions, 'utf-8')) as AgentConfig;
+    } else {
+      // AgentConfig provided directly
+      this.config = configOrOptions as AgentConfig;
+    }
+  }
+
+  /**
+   * Get or create the LLM backend.
+   */
+  private getBackend(): LLMBackend {
+    if (!this.llmBackend) {
+      this.llmBackend = new VercelAIBackend({
+        provider: this.config.data.model.provider ?? 'openai',
+        name: this.config.data.model.name,
+      });
+    }
+    return this.llmBackend;
   }
 
   async call(input: Record<string, any>): Promise<{ content: string; output: any }> {
@@ -50,65 +78,28 @@ export class FlatAgent {
       user = `${user}\n\n${this.config.data.instruction_suffix}`;
     }
 
-    // Get model
-    const model = this.getModel();
+    // Build messages for LLM backend
+    const messages: Message[] = [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ];
+
+    // Get model config options
     const modelConfig = this.config.data.model;
 
-    // Call LLM via Vercel AI SDK
-    const generateParams: any = {
-      model,
-      system,
-      prompt: user,
-    };
-    if (modelConfig.temperature !== undefined) generateParams.temperature = modelConfig.temperature;
-    if (modelConfig.max_tokens !== undefined) generateParams.maxTokens = modelConfig.max_tokens;
-    if (modelConfig.top_p !== undefined) generateParams.topP = modelConfig.top_p;
-    if (modelConfig.frequency_penalty !== undefined) generateParams.frequencyPenalty = modelConfig.frequency_penalty;
-    if (modelConfig.presence_penalty !== undefined) generateParams.presencePenalty = modelConfig.presence_penalty;
-
-    const response = await generateText(generateParams);
-
-    const text = response.text;
+    // Call LLM via backend
+    const backend = this.getBackend();
+    const text = await backend.call(messages, {
+      temperature: modelConfig.temperature,
+      max_tokens: modelConfig.max_tokens,
+      top_p: modelConfig.top_p,
+      frequency_penalty: modelConfig.frequency_penalty,
+      presence_penalty: modelConfig.presence_penalty,
+    });
 
     // Extract structured output
     const output = this.extractOutput(text);
     return { content: text, output };
-  }
-
-  private getModel(): LanguageModel {
-    if (this.model) return this.model;
-
-    const { provider = "openai", name: modelName } = this.config.data.model;
-    const providerLower = provider.toLowerCase();
-    const providerUpper = provider.toUpperCase();
-    const apiKey = process.env[`${providerUpper}_API_KEY`];
-    const baseURL = process.env[`${providerUpper}_BASE_URL`] || PROVIDER_BASE_URLS[providerLower];
-
-    if (providerLower === "openai") {
-      const openai = createOpenAI({ apiKey });
-      this.model = openai.chat(modelName);
-    } else if (providerLower === "anthropic") {
-      const anthropic = createAnthropic({ apiKey });
-      this.model = anthropic(modelName);
-    } else if (providerLower === "cerebras") {
-      const cerebras = createCerebras({ apiKey });
-      this.model = cerebras(modelName);
-    } else {
-      // Use createOpenAICompatible for any other OpenAI-compatible provider
-      if (!baseURL) {
-        throw new Error(`Unknown provider "${provider}". Set ${providerUpper}_BASE_URL environment variable.`);
-      }
-      const compatible = createOpenAICompatible({
-        name: providerLower,
-        baseURL,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
-      this.model = compatible(modelName);
-    }
-
-    return this.model!;
   }
 
   private extractOutput(text: string): any {

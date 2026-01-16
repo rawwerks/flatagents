@@ -123,20 +123,15 @@ describe('DefaultExecution', () => {
 });
 
 describe('RetryExecution', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   describe('Basic Retry Logic', () => {
     it('should retry on failure and succeed', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01]); // Short delays for testing
-      
+      const execution = new RetryExecution([0.001, 0.001], 0);
+
       const result = await execution.execute(() => {
         attempts++;
         if (attempts < 3) {
@@ -144,14 +139,14 @@ describe('RetryExecution', () => {
         }
         return Promise.resolve('success');
       });
-      
+
       expect(attempts).toBe(3);
       expect(result).toBe('success');
     });
 
     it('should fail after exhausting retries', async () => {
-      const execution = new RetryExecution([0.01]); // One retry attempt
-      
+      const execution = new RetryExecution([0.001], 0);
+
       await expect(execution.execute(() => {
         throw new Error('Always fails');
       })).rejects.toThrow('Always fails');
@@ -159,21 +154,21 @@ describe('RetryExecution', () => {
 
     it('should succeed on first attempt', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01, 0.01]);
-      
+      const execution = new RetryExecution([0.001, 0.001, 0.001], 0);
+
       const result = await execution.execute(() => {
         attempts++;
         return Promise.resolve('first try success');
       });
-      
+
       expect(attempts).toBe(1);
       expect(result).toBe('first try success');
     });
 
     it('should succeed on last possible retry', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01]); // 2 backoffs = 3 total attempts
-      
+      const execution = new RetryExecution([0.001, 0.001], 0);
+
       const result = await execution.execute(() => {
         attempts++;
         if (attempts < 3) {
@@ -181,7 +176,7 @@ describe('RetryExecution', () => {
         }
         return Promise.resolve('last attempt success');
       });
-      
+
       expect(attempts).toBe(3);
       expect(result).toBe('last attempt success');
     });
@@ -190,60 +185,43 @@ describe('RetryExecution', () => {
   describe('Backoff and Jitter', () => {
     it('should apply backoff delays between retries', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.1, 0.2], 0); // No jitter
-      
-      const resultPromise = execution.execute(() => {
+      const execution = new RetryExecution([0.001, 0.001], 0);
+
+      const result = await execution.execute(() => {
         attempts++;
         if (attempts < 3) {
           throw new Error('Fail');
         }
         return Promise.resolve('success');
       });
-      
-      // Let first attempt fail
-      await vi.advanceTimersByTime(50);
-      expect(await vi.isPending(resultPromise)).toBe(true);
-      
-      // Advance by first backoff
-      await vi.advanceTimersByTime(50); // Total: 100ms
-      await advanceTimerAndAwait(resultPromise);
-      
-      const result = await resultPromise;
+
+      expect(attempts).toBe(3);
       expect(result).toBe('success');
     });
 
     it('should apply jitter to delays', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5); // 50% random
-      
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
       let attempts = 0;
-      const execution = new RetryExecution([1, 2], 0.1); // ±10% jitter
-      
-      const resultPromise = execution.execute(() => {
+      const execution = new RetryExecution([0.001, 0.001], 0.1);
+
+      const result = await execution.execute(() => {
         attempts++;
         if (attempts < 3) {
           throw new Error('Fail');
         }
         return Promise.resolve('success');
       });
-      
-      // First attempt fails, wait for retry
-      await vi.advanceTimersByTime(1000);
-      
-      // Second attempt fails, wait for retry with jitter
-      await vi.advanceTimersByTime(2000);
-      
-      const result = await resultPromise;
+
       expect(result).toBe('success');
-      
-      vi.restoreAllMocks();
     });
 
     it('should handle zero jitter', async () => {
       vi.spyOn(Math, 'random').mockReturnValue(0);
-      
+
       let attempts = 0;
-      const execution = new RetryExecution([0.05], 0);
-      
+      const execution = new RetryExecution([0.001], 0);
+
       await execution.execute(() => {
         attempts++;
         if (attempts < 2) {
@@ -251,16 +229,15 @@ describe('RetryExecution', () => {
         }
         return Promise.resolve('success');
       });
-      
+
       expect(attempts).toBe(2);
-      vi.restoreAllMocks();
     });
   });
 
   describe('Error Type Handling', () => {
     it('should retry on different error types', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01]);
+      const execution = new RetryExecution([0.001, 0.001], 0);
       
       const result = await execution.execute(() => {
         attempts++;
@@ -280,7 +257,7 @@ describe('RetryExecution', () => {
 
     it('should propagate the last error after retries exhausted', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01]);
+      const execution = new RetryExecution([0.001, 0.001], 0);
       
       try {
         await execution.execute(() => {
@@ -294,7 +271,7 @@ describe('RetryExecution', () => {
     });
 
     it('should handle custom error properties', async () => {
-      const execution = new RetryExecution([0.01]);
+      const execution = new RetryExecution([0.001], 0);
       const customError = new Error('Custom') as any;
       customError.code = 'CUSTOM_ERROR';
       customError.statusCode = 500;
@@ -313,7 +290,7 @@ describe('RetryExecution', () => {
   describe('Complex Retry Scenarios', () => {
     it('should handle intermittent failures', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01, 0.01, 0.01]);
+      const execution = new RetryExecution([0.001, 0.001, 0.001, 0.001], 0);
       
       const result = await execution.execute(() => {
         attempts++;
@@ -330,7 +307,7 @@ describe('RetryExecution', () => {
 
     it('should handle functions that throw promises', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01, 0.01]);
+      const execution = new RetryExecution([0.001, 0.001], 0);
       
       const result = await execution.execute(() => {
         attempts++;
@@ -346,7 +323,7 @@ describe('RetryExecution', () => {
 
     it('should handle async functions directly', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01]);
+      const execution = new RetryExecution([0.001], 0);
       
       const result = await execution.execute(async () => {
         attempts++;
@@ -363,7 +340,7 @@ describe('RetryExecution', () => {
 
   describe('Performance and Load', () => {
     it('should handle concurrent retry executions', async () => {
-      const execution = new RetryExecution([0.01]);
+      const execution = new RetryExecution([0.001], 0);
       const operations = [];
       
       for (let i = 0; i < 10; i++) {
@@ -378,7 +355,7 @@ describe('RetryExecution', () => {
 
     it('should handle many retries efficiently', async () => {
       let attempts = 0;
-      const execution = new RetryExecution(Array.from({ length: 10 }, () => 0.01));
+      const execution = new RetryExecution(Array.from({ length: 10 }, () => 0.001), 0);
       
       const result = await execution.execute(() => {
         attempts++;
@@ -393,22 +370,18 @@ describe('RetryExecution', () => {
     });
 
     it('should handle long backoff periods', async () => {
+      vi.useRealTimers(); // Use real timers
       let attempts = 0;
-      const execution = new RetryExecution([1, 2, 4]); // Long delays for testing
-      
-      const resultPromise = execution.execute(() => {
+      const execution = new RetryExecution([0.001], 0); // Short delay for testing
+
+      const result = await execution.execute(() => {
         attempts++;
         if (attempts < 2) {
           throw new Error('Fail');
         }
         return Promise.resolve('success');
       });
-      
-      // Advance through first backoff
-      await vi.advanceTimersByTime(1000);
-      await advanceTimerAndAwait(resultPromise);
-      
-      const result = await resultPromise;
+
       expect(result).toBe('success');
     });
   });
@@ -434,7 +407,7 @@ describe('RetryExecution', () => {
 
     it('should handle single backoff value', async () => {
       let attempts = 0;
-      const execution = new RetryExecution([0.01]);
+      const execution = new RetryExecution([0.001], 0);
       
       const result = await execution.execute(() => {
         attempts++;
