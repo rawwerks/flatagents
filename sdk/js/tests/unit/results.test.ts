@@ -99,20 +99,29 @@ describe('InMemoryResultBackend', () => {
       // Advance time past timeout
       vi.advanceTimersByTime(3100)
       
-      const result = await readPromise
-      expect(result).toBeUndefined()
+      await expect(readPromise).rejects.toMatchObject({ name: 'TimeoutError' })
     })
 
-    it('should use default timeout when not specified', async () => {
+    it('should wait when no timeout is specified', async () => {
       const uri = 'flatagents://test/default-timeout'
+      const data = { result: 'arrived later' }
+      let resolved = false
       
-      const readPromise = inMemoryResultBackend.read(uri, { block: true })
+      const readPromise = inMemoryResultBackend.read(uri, { block: true }).then((result) => {
+        resolved = true
+        return result
+      })
       
-      // Advance time past default 30s timeout
+      // Advance time past previous default timeout
       vi.advanceTimersByTime(31000)
+      await Promise.resolve()
+      expect(resolved).toBe(false)
+      
+      await inMemoryResultBackend.write(uri, data)
+      vi.advanceTimersByTime(100)
       
       const result = await readPromise
-      expect(result).toBeUndefined()
+      expect(result).toEqual(data)
     })
 
     it('should return immediately if data exists', async () => {

@@ -18,7 +18,7 @@ export class MemoryBackend implements PersistenceBackend {
   }
 
   async list(prefix: string): Promise<string[]> {
-    return [...this.store.keys()].filter(k => k.startsWith(prefix));
+    return [...this.store.keys()].filter(k => k.startsWith(prefix)).sort();
   }
 }
 
@@ -72,7 +72,8 @@ export class LocalFileBackend implements PersistenceBackend {
       return files
         .filter((file: string) => file.endsWith('.json'))
         .map((file: string) => file.replace('.json', ''))
-        .filter((key: string) => key.startsWith(prefix));
+        .filter((key: string) => key.startsWith(prefix))
+        .sort();
     } catch (error) {
       return [];
     }
