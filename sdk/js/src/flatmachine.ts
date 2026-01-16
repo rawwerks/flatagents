@@ -10,13 +10,16 @@ import {
   ResultBackend,
   ExecutionLock,
   State,
-  MachineSnapshot
+  MachineSnapshot,
+  LaunchIntent,
+  BackendConfig
 } from './types';
 import { FlatAgent } from './flatagent';
 import { getExecutionType } from './execution';
 import { evaluate } from './expression';
 import { CheckpointManager, LocalFileBackend, MemoryBackend } from './persistence';
-import { NoOpLock } from './locking';
+import { inMemoryResultBackend } from './results';
+import { LocalFileLock, NoOpLock } from './locking';
 
 export class FlatMachine {
   public config: MachineConfig;
@@ -30,19 +33,31 @@ export class FlatMachine {
   private executionLock: ExecutionLock;
   private configDir: string;
   private checkpointEvents = new Set<string>();
+  private parentExecutionId?: string;
+  private pendingLaunches: LaunchIntent[] = [];
+  private currentState?: string;
+  private currentStep = 0;
 
   constructor(options: MachineOptions) {
     this.config = typeof options.config === "string"
       ? yaml.parse(readFileSync(options.config, "utf-8")) as MachineConfig
       : options.config;
     this.hooks = options.hooks;
-    this.resultBackend = options.resultBackend;
-    this.executionLock = options.executionLock ?? new NoOpLock();
     this.configDir = options.configDir ?? process.cwd();
+    this.executionId = options.executionId ?? this.executionId;
+    this.parentExecutionId = options.parentExecutionId;
+
+    const backendConfig = this.config.data.settings?.backends;
+    this.resultBackend = options.resultBackend ?? this.createResultBackend(backendConfig);
+    this.executionLock = options.executionLock ?? this.createExecutionLock(backendConfig);
+
     if (options.persistence) {
       this.checkpointManager = new CheckpointManager(options.persistence);
     } else if (this.config.data.persistence?.enabled) {
       const backend = this.createPersistenceBackend(this.config.data.persistence);
+      this.checkpointManager = new CheckpointManager(backend);
+    } else if (backendConfig?.persistence) {
+      const backend = this.createSettingsPersistenceBackend(backendConfig.persistence);
       this.checkpointManager = new CheckpointManager(backend);
     }
     if (this.checkpointManager) {
@@ -54,6 +69,7 @@ export class FlatMachine {
 
   async execute(input?: Record<string, any>, resumeSnapshot?: MachineSnapshot): Promise<any> {
     if (this.config.data.expression_engine === "cel") {
+      // TODO: CEL expression engine is not implemented in the JS SDK yet.
       throw new Error("expression_engine 'cel' is not supported in the JS SDK yet");
     }
 
@@ -78,9 +94,14 @@ export class FlatMachine {
     if (resumeSnapshot) {
       // Resume from checkpoint - restore state instead of reinitializing
       this.executionId = resumeSnapshot.execution_id;
+      this.parentExecutionId = resumeSnapshot.parent_execution_id;
       this.context = resumeSnapshot.context;
       state = resumeSnapshot.current_state;
       steps = resumeSnapshot.step;
+      this.pendingLaunches = resumeSnapshot.pending_launches ?? [];
+      if (this.pendingLaunches.length) {
+        await this.resumePendingLaunches();
+      }
       // Don't call onMachineStart when resuming
     } else {
       // Fresh execution - initialize context from config + input
@@ -89,6 +110,7 @@ export class FlatMachine {
       this.context = await this.hooks?.onMachineStart?.(this.context) ?? this.context;
       state = this.findInitialState();
       steps = 0;
+      this.pendingLaunches = [];
 
       if (this.shouldCheckpoint("machine_start")) {
         await this.checkpoint(state, steps, "machine_start");
@@ -99,6 +121,8 @@ export class FlatMachine {
 
     while (steps++ < maxSteps) {
       const def = this.config.data.states[state];
+      this.currentState = state;
+      this.currentStep = steps;
       this.context = await this.hooks?.onStateEnter?.(state, this.context) ?? this.context;
       if (this.shouldCheckpoint("execute")) {
         await this.checkpoint(state, steps, "execute");
@@ -205,14 +229,13 @@ export class FlatMachine {
       const varName = def.as ?? "item";
       const tasks = items.map(async (item, index) => {
         const input = this.render(def.input ?? {}, { context: this.context, input: this.input, [varName]: item });
-        const machine = this.createMachine(machineDefs[0]);
-        const result = await machine.execute(input);
+        const result = await this.invokeMachineSingle(machineDefs[0], input, timeoutMs);
         const keyValue = def.key
           ? this.render(def.key, { context: this.context, input: this.input, [varName]: item, output: result })
           : undefined;
         return { index, key: keyValue, result };
       });
-      const output = await this.awaitWithMode(tasks, mode, timeoutMs);
+      const output = await this.awaitWithMode(tasks, mode);
       if (mode === "any") {
         const picked = output as { key?: any; result: any };
         if (def.key) return { [String(picked.key)]: picked.result };
@@ -236,15 +259,14 @@ export class FlatMachine {
     // Parallel machines
     if (machineDefs.length > 1 || (machineDefs.length === 1 && typeof machineDefs[0] === "object" && "name" in machineDefs[0])) {
       const tasks = machineDefs.map(async (entry) => {
-        const name = typeof entry === "string" ? entry : entry.name;
+        const name = this.getMachineName(entry);
         const baseInput = this.render(def.input ?? {}, { context: this.context, input: this.input });
         const entryInput = typeof entry === "string" ? {} : this.render(entry.input ?? {}, { context: this.context, input: this.input });
         const mergedInput = { ...baseInput, ...entryInput };
-        const machine = this.createMachine(entry);
-        const result = await machine.execute(mergedInput);
+        const result = await this.invokeMachineSingle(entry, mergedInput, timeoutMs);
         return { name, result };
       });
-      const output = await this.awaitWithMode(tasks, mode, timeoutMs);
+      const output = await this.awaitWithMode(tasks, mode);
       if (mode === "any") {
         const picked = output as { name: string; result: any };
         return { [picked.name]: picked.result };
@@ -258,18 +280,13 @@ export class FlatMachine {
 
     // Single machine
     const input = this.render(def.input ?? {}, { context: this.context, input: this.input });
-    const machine = this.createMachine(machineDefs[0]);
-    return machine.execute(input);
+    return this.invokeMachineSingle(machineDefs[0], input, timeoutMs);
   }
 
   private async launchMachines(def: State): Promise<void> {
     const machines = Array.isArray(def.launch) ? def.launch : [def.launch!];
-    for (const name of machines) {
-      const input = this.render(def.launch_input ?? {}, { context: this.context, input: this.input });
-      const machine = this.createMachine(name);
-      // Fire and forget
-      machine.execute(input).catch(() => { });
-    }
+    const input = this.render(def.launch_input ?? {}, { context: this.context, input: this.input });
+    await Promise.all(machines.map((machineRef) => this.launchFireAndForget(machineRef, input)));
   }
 
   private evaluateTransitions(def: State, output: any): string {
@@ -294,6 +311,8 @@ export class FlatMachine {
       created_at: new Date().toISOString(),
       event,
       output,
+      parent_execution_id: this.parentExecutionId,
+      pending_launches: this.pendingLaunches.length ? this.pendingLaunches : undefined,
     });
   }
 
@@ -327,6 +346,23 @@ export class FlatMachine {
     return this.checkpointManager ? this.checkpointEvents.has(event) : false;
   }
 
+  private createResultBackend(config?: BackendConfig): ResultBackend {
+    if (!config?.results || config.results === "memory") return inMemoryResultBackend;
+    throw new Error(`Unsupported result backend: ${config.results}`);
+  }
+
+  private createExecutionLock(config?: BackendConfig): ExecutionLock {
+    if (!config?.locking || config.locking === "none") return new NoOpLock();
+    if (config.locking === "local") return new LocalFileLock();
+    throw new Error(`Unsupported execution lock backend: ${config.locking}`);
+  }
+
+  private createSettingsPersistenceBackend(setting: BackendConfig["persistence"]): PersistenceBackend {
+    if (setting === "memory") return new MemoryBackend();
+    if (setting === "local") return new LocalFileBackend();
+    throw new Error(`Unsupported persistence backend: ${setting}`);
+  }
+
   private createPersistenceBackend(config: NonNullable<MachineConfig["data"]["persistence"]>) {
     if (config.backend === "memory") return new MemoryBackend();
     if (config.backend === "local") return new LocalFileBackend();
@@ -345,12 +381,18 @@ export class FlatMachine {
     return new FlatAgent(`${this.configDir}/${agentRef}`);
   }
 
-  private createMachine(machineRef: any): FlatMachine {
+  private createMachine(
+    machineRef: any,
+    overrides?: { executionId?: string; parentExecutionId?: string }
+  ): FlatMachine {
     const resolved = this.resolveMachineRef(machineRef);
     return new FlatMachine({
       config: resolved.config,
       configDir: resolved.configDir,
       resultBackend: this.resultBackend,
+      hooks: this.hooks,
+      executionId: overrides?.executionId,
+      parentExecutionId: overrides?.parentExecutionId,
     });
   }
 
@@ -386,6 +428,130 @@ export class FlatMachine {
       return { config: `${this.configDir}/${entry}`, configDir: this.configDir };
     }
     return { config: `${this.configDir}/${name}`, configDir: this.configDir };
+  }
+
+  private getMachineName(machineRef: any): string {
+    if (typeof machineRef === "string") return machineRef;
+    if (machineRef?.name) return String(machineRef.name);
+    if (machineRef?.path) return String(machineRef.path);
+    if (machineRef?.inline?.data?.name) return String(machineRef.inline.data.name);
+    if (machineRef?.spec === "flatmachine" && machineRef.data?.name) return String(machineRef.data.name);
+    return "machine";
+  }
+
+  private makeResultUri(executionId: string): string {
+    return `flatagents://${executionId}/result`;
+  }
+
+  private async addPendingLaunch(executionId: string, machine: string, input: Record<string, any>): Promise<void> {
+    this.pendingLaunches.push({ execution_id: executionId, machine, input, launched: false });
+    if (this.currentState && this.shouldCheckpoint("execute")) {
+      await this.checkpoint(this.currentState, this.currentStep, "execute");
+    }
+  }
+
+  private markLaunched(executionId: string): void {
+    for (const intent of this.pendingLaunches) {
+      if (intent.execution_id === executionId) {
+        intent.launched = true;
+        return;
+      }
+    }
+  }
+
+  private clearPendingLaunch(executionId: string): void {
+    this.pendingLaunches = this.pendingLaunches.filter(intent => intent.execution_id !== executionId);
+  }
+
+  private async resumePendingLaunches(): Promise<void> {
+    if (!this.resultBackend) return;
+    for (const intent of this.pendingLaunches) {
+      if (intent.launched) continue;
+      const uri = this.makeResultUri(intent.execution_id);
+      const exists = await this.resultBackend.exists(uri);
+      if (exists) continue;
+      const launchPromise = this.launchAndWrite(intent.machine, intent.execution_id, intent.input);
+      this.markLaunched(intent.execution_id);
+      launchPromise
+        .then(() => this.clearPendingLaunch(intent.execution_id))
+        .catch(() => {});
+    }
+  }
+
+  private async launchAndWrite(machineRef: any, executionId: string, input: Record<string, any>): Promise<any> {
+    const machine = this.createMachine(machineRef, {
+      executionId,
+      parentExecutionId: this.executionId,
+    });
+    try {
+      const result = await machine.execute(input);
+      if (this.resultBackend) {
+        await this.resultBackend.write(this.makeResultUri(executionId), result);
+      }
+      return result;
+    } catch (err) {
+      if (this.resultBackend) {
+        const error = err as Error;
+        await this.resultBackend.write(this.makeResultUri(executionId), {
+          _error: error.message,
+          _error_type: error.name || error.constructor?.name,
+        });
+      }
+      throw err;
+    }
+  }
+
+  private normalizeMachineResult(result: any): any {
+    if (result && typeof result === "object" && "_error" in result) {
+      const error = new Error(String(result._error ?? "Machine execution failed"));
+      error.name = String((result as Record<string, any>)._error_type ?? "Error");
+      throw error;
+    }
+    return result;
+  }
+
+  private async invokeMachineSingle(machineRef: any, input: Record<string, any>, timeoutMs?: number): Promise<any> {
+    const childId = randomUUID();
+    const machineName = this.getMachineName(machineRef);
+    await this.addPendingLaunch(childId, machineName, input);
+    const launchPromise = this.launchAndWrite(machineRef, childId, input);
+
+    let shouldClear = false;
+    try {
+      if (!this.resultBackend) {
+        const result = await launchPromise;
+        shouldClear = true;
+        return result;
+      }
+      const result = await this.resultBackend.read(this.makeResultUri(childId), {
+        block: true,
+        timeout: timeoutMs,
+      });
+      shouldClear = true;
+      return this.normalizeMachineResult(result);
+    } catch (err) {
+      if ((err as Error).name !== "TimeoutError") {
+        shouldClear = true;
+      }
+      throw err;
+    } finally {
+      this.markLaunched(childId);
+      if (shouldClear) {
+        this.clearPendingLaunch(childId);
+      }
+      launchPromise.catch(() => {});
+    }
+  }
+
+  private async launchFireAndForget(machineRef: any, input: Record<string, any>): Promise<void> {
+    const childId = randomUUID();
+    const machineName = this.getMachineName(machineRef);
+    await this.addPendingLaunch(childId, machineName, input);
+    const launchPromise = this.launchAndWrite(machineRef, childId, input);
+    this.markLaunched(childId);
+    launchPromise
+      .then(() => this.clearPendingLaunch(childId))
+      .catch(() => {});
   }
 
   private async awaitWithMode<T>(tasks: Promise<T>[], mode: string, timeoutMs?: number): Promise<T | T[]> {

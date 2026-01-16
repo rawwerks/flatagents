@@ -30,7 +30,7 @@ export interface MachineConfig {
     agents?: Record<string, string>;
     machines?: Record<string, string | MachineConfig | MachineWrapper | MachineReference>;
     states: Record<string, State>;
-    settings?: { max_steps?: number;[key: string]: any };
+    settings?: { max_steps?: number; backends?: BackendConfig; [key: string]: any };
     persistence?: { enabled: boolean; backend: "local" | "memory" | "redis" | string; checkpoint_on?: string[];[key: string]: any };
   };
 }
@@ -141,6 +141,8 @@ export interface MachineOptions {
   resultBackend?: ResultBackend;
   executionLock?: ExecutionLock;
   configDir?: string;
+  executionId?: string;
+  parentExecutionId?: string;
 }
 
 export interface MachineInput {
@@ -157,6 +159,13 @@ export interface MachineWrapper {
   spec: "flatmachine";
   spec_version: string;
   data: MachineConfig["data"];
+}
+
+// Matches flatagents-runtime.d.ts BackendConfig
+export interface BackendConfig {
+  persistence?: "memory" | "local" | "redis" | "postgres" | "s3";
+  locking?: "none" | "local" | "redis" | "consul";
+  results?: "memory" | "redis";
 }
 
 // =============================================================================

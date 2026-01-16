@@ -44,6 +44,13 @@ export class FlatAgent {
       // AgentConfig provided directly
       this.config = configOrOptions as AgentConfig;
     }
+
+    const configData = this.config && typeof this.config === "object"
+      ? (this.config as any).data
+      : undefined;
+    if (configData?.expression_engine === "cel") {
+      throw new Error("expression_engine 'cel' is not supported in the JS SDK yet");
+    }
   }
 
   /**

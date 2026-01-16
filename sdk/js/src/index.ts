@@ -53,5 +53,6 @@ export type {
   MachineHooks,
   PersistenceBackend,
   ResultBackend,
-  MachineOptions
+  MachineOptions,
+  BackendConfig
 } from './types';
