@@ -48,6 +48,8 @@ class HookAction(Action):
 class MachineInvoker(ABC):
     """
     Interface for invoking other machines (graph execution).
+    
+    See flatagents-runtime.d.ts for canonical interface definition.
     """
     
     @abstractmethod
@@ -55,70 +57,183 @@ class MachineInvoker(ABC):
         self,
         caller_machine: 'FlatMachine',
         target_config: Dict[str, Any],
-        context: Dict[str, Any]
+        input_data: Dict[str, Any],
+        execution_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Invoke another machine.
-        Returns output (if sync) or raises exception (if async/detached).
+        Invoke another machine and wait for result.
+        
+        Args:
+            caller_machine: The machine initiating the call
+            target_config: Config dict for the target machine
+            input_data: Input to pass to the target machine
+            execution_id: Optional predetermined ID (for resume support)
+        
+        Returns:
+            The target machine's output
+        """
+        pass
+    
+    @abstractmethod
+    async def launch(
+        self,
+        caller_machine: 'FlatMachine',
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: str
+    ) -> None:
+        """
+        Launch a machine fire-and-forget style.
+        
+        The launched machine runs independently. Results are written
+        to the result backend using the execution_id.
+        
+        Args:
+            caller_machine: The machine initiating the launch
+            target_config: Config dict for the target machine
+            input_data: Input to pass to the target machine
+            execution_id: The predetermined execution ID for the launched machine
         """
         pass
 
 class InlineInvoker(MachineInvoker):
     """
-    Default v1 Invoker.
-    Runs target machine in same process (synchronous await).
+    Default Invoker for local execution.
+    
+    - invoke(): Runs target machine in same event loop, awaits result
+    - launch(): Creates background task, returns immediately
+    
+    Both share the same persistence/lock backends as the caller.
+    """
+    
+    def __init__(self):
+        # Track background tasks for cleanup
+        self._background_tasks: set = set()
+    
+    async def invoke(
+        self,
+        caller_machine: 'FlatMachine',
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        from .flatmachine import FlatMachine  # lazy import to avoid cycle
+        import hashlib
+        
+        target_name = target_config.get('data', {}).get('name', 'unknown')
+        
+        # Generate execution_id if not provided
+        if not execution_id:
+            context_hash = hashlib.md5(str(sorted(input_data.items())).encode()).hexdigest()[:8]
+            execution_id = f"{caller_machine.execution_id}:peer:{target_name}:{context_hash}"
+
+        logger.info(f"Invoking peer machine: {target_name} (ID: {execution_id})")
+        
+        target = FlatMachine(
+            config_dict=target_config,
+            persistence=caller_machine.persistence,
+            lock=caller_machine.lock,
+            result_backend=caller_machine.result_backend,
+            _config_dir=caller_machine._config_dir,
+            _execution_id=execution_id,
+            _parent_execution_id=caller_machine.execution_id,
+        )
+        
+        result = await target.execute(input=input_data, resume_from=execution_id)
+        
+        # Aggregate stats back to caller
+        caller_machine.total_api_calls += target.total_api_calls
+        caller_machine.total_cost += target.total_cost
+        
+        return result
+    
+    async def launch(
+        self,
+        caller_machine: 'FlatMachine',
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: str
+    ) -> None:
+        import asyncio
+        from .flatmachine import FlatMachine
+        from .backends import make_uri
+        
+        target_name = target_config.get('data', {}).get('name', 'unknown')
+        logger.info(f"Launching peer machine (fire-and-forget): {target_name} (ID: {execution_id})")
+        
+        async def _execute_and_write():
+            target = FlatMachine(
+                config_dict=target_config,
+                persistence=caller_machine.persistence,
+                lock=caller_machine.lock,
+                result_backend=caller_machine.result_backend,
+                _config_dir=caller_machine._config_dir,
+                _execution_id=execution_id,
+                _parent_execution_id=caller_machine.execution_id,
+            )
+            
+            try:
+                result = await target.execute(input=input_data)
+                # Write result to backend so parent can read if needed
+                uri = make_uri(execution_id, "result")
+                await caller_machine.result_backend.write(uri, result)
+            except Exception as e:
+                uri = make_uri(execution_id, "result")
+                await caller_machine.result_backend.write(uri, {
+                    "_error": str(e),
+                    "_error_type": type(e).__name__
+                })
+                raise
+        
+        # Create background task
+        task = asyncio.create_task(_execute_and_write())
+        caller_machine._background_tasks.add(task)
+        task.add_done_callback(caller_machine._background_tasks.discard)
+
+
+class QueueInvoker(MachineInvoker):
+    """
+    Invoker that enqueues launches to an external queue.
+    
+    For production deployments using SQS, Cloud Tasks, etc.
+    Subclass and implement _enqueue() for your queue provider.
     """
     
     async def invoke(
         self,
         caller_machine: 'FlatMachine',
         target_config: Dict[str, Any],
-        context: Dict[str, Any]
+        input_data: Dict[str, Any],
+        execution_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        from .flatmachine import FlatMachine  # lazy import to avoid cycle
-        import hashlib
+        # For queue-based invocation, we launch and then poll for result
+        import uuid
+        from .backends import make_uri
         
-        # Get machine name from nested data.name (not top-level)
-        target_name = target_config.get('data', {}).get('name', 'unknown')
+        if not execution_id:
+            execution_id = str(uuid.uuid4())
         
-        # Create a unique ID per invocation by hashing the context
-        # This ensures each loop iteration gets its own checkpoint
-        context_hash = hashlib.md5(str(sorted(context.items())).encode()).hexdigest()[:8]
-        target_id = f"{caller_machine.execution_id}:peer:{target_name}:{context_hash}"
+        await self.launch(caller_machine, target_config, input_data, execution_id)
+        
+        # Block until result is available
+        uri = make_uri(execution_id, "result")
+        return await caller_machine.result_backend.read(uri, block=True)
+    
+    async def launch(
+        self,
+        caller_machine: 'FlatMachine',
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: str
+    ) -> None:
+        await self._enqueue(execution_id, target_config, input_data)
+    
+    async def _enqueue(
+        self,
+        execution_id: str,
+        config: Dict[str, Any],
+        input_data: Dict[str, Any]
+    ) -> None:
+        """Override in subclass to enqueue to your queue provider."""
+        raise NotImplementedError("Subclass must implement _enqueue()")
 
-        logger.info(f"Launching peer machine: {target_name} (ID: {target_id})")
-        
-        # Determine if we should reuse launcher's persistence/lock
-        # (Usually yes for inline execution)
-        target = FlatMachine(
-            config_dict=target_config,  # Must use config_dict, not config
-            # Pass down launcher's backend/lock to keep everything in same storage
-            persistence=caller_machine.persistence,
-            lock=caller_machine.lock,
-            # Inherit config_dir so relative agent paths resolve correctly
-            _config_dir=caller_machine._config_dir
-        )
-        
-        # Execute peer
-        # Note: resume_from=target_id ensures if we crash and retry, we pick up
-        # where the peer left off (or use its existing result)
-        result = await target.execute(
-            input=context,
-            resume_from=target_id
-        )
-        
-        # Aggregate peer machine stats back to launcher
-        caller_machine.total_api_calls += target.total_api_calls
-        caller_machine.total_cost += target.total_cost
-        
-        return result
-
-class CloudInvoker(MachineInvoker):
-    """STUB: Future AWS Step Functions / Lambda invoker."""
-    async def invoke(self, caller, target, context):
-        raise NotImplementedError("Distributed execution is a v2 feature")
-
-class HttpInvoker(MachineInvoker):
-    """STUB: Future REST/Webhook invoker."""
-    async def invoke(self, caller, target, context):
-        raise NotImplementedError("HTTP execution is a v2 feature")

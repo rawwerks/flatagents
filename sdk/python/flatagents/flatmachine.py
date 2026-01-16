@@ -49,7 +49,8 @@ from .actions import (
     Action,
     HookAction,
     MachineInvoker,
-    InlineInvoker
+    InlineInvoker,
+    QueueInvoker,
 )
 
 logger = get_logger(__name__)
@@ -744,17 +745,26 @@ class FlatMachine:
         machines: list[str],
         input_data: Dict[str, Any]
     ) -> None:
-        """Launch machines without waiting for results (fire-and-forget)."""
+        """Launch machines without waiting for results (fire-and-forget).
+        
+        Delegates to self.invoker.launch() for cloud-agnostic execution.
+        The invoker determines HOW the launch happens (inline task, queue, etc).
+        """
         for machine_name in machines:
             child_id = str(uuid.uuid4())
+            target_config = self._resolve_machine_config(machine_name)
+            
+            # Record intent before launch (outbox pattern)
             self._add_pending_launch(child_id, machine_name, input_data)
-
-            task = asyncio.create_task(
-                self._launch_and_write(machine_name, child_id, input_data)
+            
+            # Delegate to invoker
+            await self.invoker.launch(
+                caller_machine=self,
+                target_config=target_config,
+                input_data=input_data,
+                execution_id=child_id
             )
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-
+            
             self._mark_launched(child_id)
 
     async def _run_hook(self, method_name: str, *args) -> Any:
