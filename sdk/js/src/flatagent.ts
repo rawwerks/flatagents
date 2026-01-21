@@ -1,4 +1,3 @@
-import * as nunjucks from "nunjucks";
 import * as yaml from "yaml";
 import { readFileSync } from 'fs';
 import { dirname } from 'path';
@@ -6,6 +5,7 @@ import { AgentConfig, ModelConfig } from './types';
 import { MCPToolProvider } from './mcp';
 import { LLMBackend, Message, VercelAIBackend } from './llm';
 import { resolveModelConfig } from './profiles';
+import { renderTemplate } from './templating';
 
 /**
  * Options for constructing a FlatAgent with custom backends.
@@ -107,11 +107,11 @@ export class FlatAgent {
     // Render prompts
     const tools = this.mcpProvider ? await this.mcpProvider.listTools(this.config.data.mcp?.tool_filter) : [];
     const toolsPrompt = this.config.data.mcp?.tool_prompt
-      ? nunjucks.renderString(this.config.data.mcp.tool_prompt, { tools })
+      ? renderTemplate(this.config.data.mcp.tool_prompt, { tools }, "flatagent.tool_prompt")
       : "";
     const templateVars = { input, tools, tools_prompt: toolsPrompt, model: this.resolvedModelConfig };
-    const system = nunjucks.renderString(this.config.data.system, templateVars);
-    let user = nunjucks.renderString(this.config.data.user, templateVars);
+    const system = renderTemplate(this.config.data.system, templateVars, "flatagent.system");
+    let user = renderTemplate(this.config.data.user, templateVars, "flatagent.user");
     if (this.config.data.instruction_suffix) {
       user = `${user}\n\n${this.config.data.instruction_suffix}`;
     }

@@ -42,7 +42,7 @@ data:
         title: "{{ context.title }}"
         chapter_number: "{{ context.chapter_number }}"
         outline: "{{ context.chapter_outline }}"
-        previous_summary: "{{ context.previous_chapters[-1][:500] if context.previous_chapters else 'This is the first chapter.' }}"
+        previous_summary: "{{ (context.previous_chapters | last) | default('This is the first chapter.', true) | truncate(500, true) }}"
       output_to_context:
         raw_draft: "{{ output.content }}"
       transitions:

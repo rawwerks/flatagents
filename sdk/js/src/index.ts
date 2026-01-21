@@ -24,6 +24,7 @@ export {
   MCPToolProvider
 } from './mcp';
 export { evaluate } from './expression';
+export { setTemplateAllowlist } from './template_allowlist';
 export {
   NoOpLock,
   LocalFileLock
@@ -61,3 +62,4 @@ export type {
   ProfiledModelConfig,
   ProfilesConfig
 } from './types';
+export type { TemplateAllowlist } from './template_allowlist';

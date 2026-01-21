@@ -67,10 +67,13 @@ class OTFAgentHooks(MachineHooks):
         print(f"\n🤖 GENERATED AGENT: {name}")
         print("-" * 50)
         print(f"Temperature: {temperature}")
-        system_preview = str(system)[:500] if system else "(none)"
-        print(f"\nSystem Prompt:\n{system_preview}...")
-        user_preview = str(user)[:300] if user else "(none)"
-        print(f"\nUser Prompt Template:\n{user_preview}...")
+        system_text = str(system) if system else "(none)"
+        print(f"\nSystem Prompt:\n{system_text}")
+        user_text = str(user) if user else "(none)"
+        task_text = str(context.get("task", ""))
+        user_rendered = user_text.replace("<<input.task>>", task_text).replace("{{ input.task }}", task_text)
+        user_display = user_rendered if user_rendered else "(none)"
+        print(f"\nUser Prompt Template:\n{user_display}")
         
         # Show supervisor's analysis
         print("\n" + "-" * 50)
@@ -173,6 +176,8 @@ class OTFAgentHooks(MachineHooks):
 
         profile_name = "creative" if temperature == 0.6 else "default"
         
+        normalized_user = str(user).replace("<<input.task>>", "{{ input.task }}").strip()
+
         agent_config = {
             "spec": "flatagent",
             "spec_version": "0.7.7",
@@ -180,7 +185,7 @@ class OTFAgentHooks(MachineHooks):
                 "name": name,
                 "model": profile_name,
                 "system": system,
-                "user": user,
+                "user": normalized_user,
                 "output": output_schema
             }
         }

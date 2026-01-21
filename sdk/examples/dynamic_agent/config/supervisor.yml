@@ -43,7 +43,7 @@ data:
     Temperature: {{ input.spec_temperature | default('N/A') }}
 
     Output Schema:
-    {{ input.spec_output_fields | default('{}') }}
+    {{ input.spec_output_fields | default({}) | tojson }}
 
     ---
     Analyze this agent spec. Should it be approved for execution?

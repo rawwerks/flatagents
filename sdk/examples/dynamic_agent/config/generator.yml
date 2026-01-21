@@ -18,7 +18,7 @@ data:
     You should provide:
     - name: A short name for the specialized agent
     - system: The system prompt for the agent (detailed, personality-rich)
-    - user: The user prompt template (use {{ input.task }} to reference the task)
+    - user: The user prompt template (use the literal placeholder <<input.task>>; it is normalized to {{ "{{ input.task }}" }} at execution)
     - temperature: Either 0.6 (creative) or 1.0 (default)
     - output_fields: An object defining what the agent should return
 
@@ -27,6 +27,21 @@ data:
     - 0.6 for creative writing
 
     If previous concerns are provided, address them in your new design.
+
+    Output format:
+    - Provide a plain-text spec using labeled sections exactly as shown below.
+    - Do NOT include extra commentary or markdown outside the sections.
+    - output fields must be described as key/value pairs (at minimum include "content").
+
+    Format:
+    Name: <short agent name>
+    System Prompt:
+    <multi-line system prompt>
+    User Prompt Template:
+    <multi-line user template, must include <<input.task>>>
+    Temperature: <0.6 or 1.0>
+    Output Fields:
+    - content: The creative writing output
 
   user: |
     Task: {{ input.task }}
@@ -41,6 +56,8 @@ data:
 
     Generate a specialized agent specification for this task.
     Provide the name, system prompt, user prompt template, temperature, and output fields.
+
+    Use the plain-text format described above.
 
 metadata:
   description: "Generates specialized creative writing agents"

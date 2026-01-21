@@ -1,0 +1,27 @@
+{
+  "name": "flatagents-dynamic-agent",
+  "version": "0.1.0",
+  "description": "Dynamic agent (OTF) demo for FlatAgents.",
+  "type": "module",
+  "main": "src/dynamic_agent/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/dynamic_agent/main.ts",
+    "start": "node dist/dynamic_agent/main.js"
+  },
+  "dependencies": {
+    "flatagents": "file:../../../js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  },
+  "keywords": [
+    "flatagents",
+    "demo",
+    "dynamic-agent"
+  ],
+  "author": "",
+  "license": "MIT"
+}

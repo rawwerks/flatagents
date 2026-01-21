@@ -1,4 +1,3 @@
-import * as nunjucks from "nunjucks";
 import * as yaml from "yaml";
 import { readFileSync } from "fs";
 import { randomUUID } from "node:crypto";
@@ -20,6 +19,8 @@ import { evaluate } from './expression';
 import { CheckpointManager, LocalFileBackend, MemoryBackend } from './persistence';
 import { inMemoryResultBackend } from './results';
 import { LocalFileLock, NoOpLock } from './locking';
+import { renderTemplate } from './templating';
+
 
 export class FlatMachine {
   public config: MachineConfig;
@@ -322,7 +323,7 @@ export class FlatMachine {
     if (typeof template === "string") {
       const directValue = this.renderDirectValue(template, vars);
       if (directValue !== undefined) return directValue;
-      const rendered = nunjucks.renderString(template, vars);
+      const rendered = renderTemplate(template, vars, "flatmachine");
       try { return JSON.parse(rendered); } catch { return rendered; }
     }
     if (Array.isArray(template)) return template.map(t => this.render(t, vars));
