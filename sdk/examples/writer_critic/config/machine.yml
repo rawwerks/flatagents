@@ -11,6 +11,7 @@ data:
   # Initial context - populated from input
   context:
     product: "{{ input.product }}"
+    raw_tagline: null
     tagline: null
     feedback: null
     score: 0
@@ -21,6 +22,7 @@ data:
   # Agent references
   agents:
     writer: ./writer.yml
+    tagline_extractor: ./tagline_extractor.yml
     critic: ./critic.yml
   
   # State machine
@@ -41,10 +43,23 @@ data:
         tagline: "{{ context.tagline }}"
         feedback: "{{ context.feedback }}"
       output_to_context:
+        raw_tagline: "{{ output.content }}"
+      transitions:
+        - to: extract_tagline
+
+    extract_tagline:
+      agent: tagline_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_tagline }}"
+      output_to_context:
         tagline: "{{ output.tagline }}"
       transitions:
         - to: review
-    
+
     review:
       agent: critic
       execution:
@@ -55,7 +70,7 @@ data:
         product: "{{ context.product }}"
         tagline: "{{ context.tagline }}"
       output_to_context:
-        score: "{{ output.score }}"
+        score: "{{ output.score | int }}"
         feedback: "{{ output.feedback }}"
         round: "{{ context.round + 1 }}"
       transitions:

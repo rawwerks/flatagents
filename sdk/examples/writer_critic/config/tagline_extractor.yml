@@ -1,0 +1,19 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: tagline-extractor
+  model: fast
+  system: Extract the marketing tagline from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"tagline": "the extracted tagline"}
+  output:
+    tagline:
+      type: str
+      description: The extracted tagline
+
+metadata:
+  author: flatagents
+  description: Extracts tagline from raw text output

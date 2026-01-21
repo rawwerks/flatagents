@@ -6,20 +6,15 @@ data:
   model: creative
   system: You write short, punchy marketing copy. Be creative and memorable.
   user: |
-    Product: {{ input.product }}
     {% if input.feedback %}
     Previous attempt: {{ input.tagline }}
     Feedback: {{ input.feedback }}
     Write an improved tagline that addresses the feedback.
     {% else %}
-    Write a catchy tagline for this product.
+    Write a catchy tagline for this product: {{ input.product }}
     {% endif %}
 
-    Respond with JSON: {"tagline": "your tagline here"}
-  output:
-    tagline:
-      type: str
-      description: A short, memorable marketing tagline
+    Write only the tagline, nothing else.
 
 metadata:
   author: flatagents
