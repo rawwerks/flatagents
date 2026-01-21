@@ -1,0 +1,25 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: summary-extractor
+  model: fast
+  system: Extract the summary details from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"summary": "executive summary", "key_insights": ["insight1"], "recommendations": ["recommendation1"]}
+  output:
+    summary:
+      type: str
+      description: Executive summary of the optimization run
+    key_insights:
+      type: list
+      description: Most important findings
+    recommendations:
+      type: list
+      description: Recommendations for further improvement
+
+metadata:
+  author: flatagents
+  description: Extracts summary from raw text output

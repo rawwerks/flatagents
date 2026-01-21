@@ -10,8 +10,8 @@ data:
     Error type: {{ input.error_type }}
     State: {{ input.state }}
 
-    Respond with JSON: {"summary": "your summary here"}
-  output:
-    summary:
-      type: str
-      description: One sentence error summary
+    Write only the summary sentence.
+
+metadata:
+  author: flatagents
+  description: Cleanup agent that summarizes errors

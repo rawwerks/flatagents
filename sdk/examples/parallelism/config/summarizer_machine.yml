@@ -6,19 +6,37 @@ spec_version: "0.7.7"
 
 data:
   name: summarizer-machine
-  
+  profiles: ./profiles.yml
+
+  context:
+    raw_summary: null
+
   agents:
     summarizer: ./summarizer_agent.yml
-  
+    summarizer_extractor: ./summarizer_extractor.yml
+
   states:
     start:
       type: initial
       agent: summarizer
       output_to_context:
+        raw_summary: "{{ output.content }}"
+      transitions:
+        - to: extract_summary
+
+    extract_summary:
+      agent: summarizer_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_summary }}"
+      output_to_context:
         result: "{{ output }}"
       transitions:
         - to: done
-    
+
     done:
       type: final
       output:

@@ -20,6 +20,12 @@ data:
       temperature: 0.6
       max_tokens: 10000
 
+    # Fast profile for extraction
+    fast:
+      provider: cerebras
+      name: zai-glm-4.7
+      temperature: 1.0
+
   default: default
 
 metadata:

@@ -53,28 +53,6 @@ data:
     - Your confidence in the answer
     - Any caveats or limitations
 
-    Respond with JSON: {"final_answer": "...", "reasoning": "...", "confidence": "high|medium|low", "caveats": ["..."], "sources_used": 0}
-
-  output:
-    final_answer:
-      type: str
-      description: "The synthesized final answer to the original task"
-    reasoning:
-      type: str
-      description: "Summary of the reasoning process"
-    confidence:
-      type: str
-      description: "Overall confidence: high, medium, or low"
-      enum: ["high", "medium", "low"]
-    caveats:
-      type: list
-      description: "Any caveats or limitations of the answer"
-      items:
-        type: str
-    sources_used:
-      type: int
-      description: "Number of sub-task results that contributed to the answer"
-
 metadata:
   description: "Synthesizes sub-task results into a final answer"
   tags: ["rlm", "synthesis", "aggregation"]

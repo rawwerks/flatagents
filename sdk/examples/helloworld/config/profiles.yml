@@ -10,7 +10,7 @@ data:
     fast-cheap:
       provider: cerebras
       name: zai-glm-4.6
-      temperature: 0.6
+      temperature: 1.0
       max_tokens: 2048
 
     # Smart and expensive - good for production/complex tasks

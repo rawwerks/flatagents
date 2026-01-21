@@ -1,0 +1,25 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: summarizer-extractor
+  model: fast
+  system: Extract the summary results from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"summary": "concise summary", "key_topics": ["topic1", "topic2"], "text_count": 0}
+  output:
+    summary:
+      type: str
+      description: Concise summary of all texts
+    key_topics:
+      type: array
+      description: Main topics identified across texts
+    text_count:
+      type: int
+      description: Number of texts processed
+
+metadata:
+  author: flatagents
+  description: Extracts summary from raw text output

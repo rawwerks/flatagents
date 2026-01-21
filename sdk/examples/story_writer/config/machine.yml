@@ -7,28 +7,30 @@ spec_version: "0.7.7"
 data:
   name: story-orchestrator
   profiles: ./profiles.yml
-  
+
   # Enable checkpoint persistence to disk
   persistence:
     enabled: true
     backend: local
-  
+
   context:
     genre: "{{ input.genre }}"
     premise: "{{ input.premise }}"
     num_chapters: "{{ input.num_chapters | default(2) }}"
+    raw_outline: null
     title: null
     outline: null
     current_chapter: 0
     chapters: []
-  
+
   agents:
     outliner: ./outliner.yml
-  
+    outline_extractor: ./outline_extractor.yml
+
   # Peer machine for writing individual chapters
   machines:
     chapter_writer: ./chapter_machine.yml
-  
+
   states:
     start:
       type: initial
@@ -46,6 +48,19 @@ data:
         genre: "{{ context.genre }}"
         premise: "{{ context.premise }}"
         num_chapters: "{{ context.num_chapters }}"
+      output_to_context:
+        raw_outline: "{{ output.content }}"
+      transitions:
+        - to: extract_outline
+
+    extract_outline:
+      agent: outline_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_outline }}"
       output_to_context:
         title: "{{ output.title }}"
         outline: "{{ output.chapter_outlines }}"

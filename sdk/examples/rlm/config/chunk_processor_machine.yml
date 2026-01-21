@@ -19,6 +19,7 @@ data:
     chunk_content: null
 
     # Processing result
+    raw_processed: null
     answer: null
     evidence: []
     confidence: null
@@ -26,6 +27,7 @@ data:
 
   agents:
     processor: ./processor.yml
+    processed_extractor: ./processed_extractor.yml
 
   states:
     start:
@@ -48,11 +50,24 @@ data:
         chunk_end: "{{ context.sub_task.chunk_end }}"
         total_length: "{{ context.total_length }}"
       output_to_context:
+        raw_processed: "{{ output.content }}"
+      on_error: handle_error
+      transitions:
+        - to: extract_processed
+
+    extract_processed:
+      agent: processed_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_processed }}"
+      output_to_context:
         answer: "{{ output.answer }}"
         evidence: "{{ output.evidence }}"
         confidence: "{{ output.confidence }}"
         contains_answer: "{{ output.contains_answer }}"
-      on_error: handle_error
       transitions:
         - to: done
 

@@ -1,0 +1,19 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: feedback-extractor
+  model: fast
+  system: Extract the feedback from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"feedback": "the extracted feedback"}
+  output:
+    feedback:
+      type: str
+      description: The extracted feedback
+
+metadata:
+  author: flatagents
+  description: Extracts feedback from raw text output

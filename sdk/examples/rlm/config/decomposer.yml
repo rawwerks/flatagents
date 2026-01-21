@@ -46,44 +46,7 @@ data:
     - Specify the chunk(s) of input needed (as start:end indices)
     - Explain how this contributes to the final answer
 
-    If the task is simple enough to answer directly without decomposition, set `needs_decomposition` to false.
-
-    Respond with JSON: {"needs_decomposition": true/false, "sub_tasks": [...], "aggregation_strategy": "concat|sum|vote|synthesize", "direct_answer": "answer if no decomposition needed"}
-
-  output:
-    needs_decomposition:
-      type: bool
-      description: "Whether the task needs to be decomposed into sub-tasks"
-    sub_tasks:
-      type: list
-      description: "List of sub-tasks to process recursively"
-      items:
-        type: object
-        properties:
-          id:
-            type: str
-            description: "Unique identifier for this sub-task"
-          question:
-            type: str
-            description: "The specific question to answer"
-          chunk_start:
-            type: int
-            description: "Start index of the relevant chunk"
-          chunk_end:
-            type: int
-            description: "End index of the relevant chunk"
-          contribution:
-            type: str
-            description: "How this sub-task contributes to the final answer"
-          priority:
-            type: int
-            description: "Priority (1=highest) for ordering"
-    aggregation_strategy:
-      type: str
-      description: "How to combine sub-task results (concat, sum, vote, synthesize)"
-    direct_answer:
-      type: str
-      description: "Direct answer if no decomposition needed"
+    If the task is simple enough to answer directly without decomposition, indicate that no decomposition is needed and provide a direct answer.
 
 metadata:
   description: "Decomposes complex tasks into sub-tasks for recursive processing"

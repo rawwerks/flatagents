@@ -4,28 +4,24 @@ spec_version: "0.7.7"
 
 data:
   name: chapter-reviser
-  
+
   model: creative
-  
+
   system: |
-    You are a skilled fiction editor. Revise drafts based on feedback while 
+    You are a skilled fiction editor. Revise drafts based on feedback while
     preserving the author's voice and story intent. Make targeted improvements.
-  
+
   user: |
     Revise this chapter based on the feedback:
-    
+
     ORIGINAL CHAPTER:
     {{ input.chapter_text }}
-    
+
     FEEDBACK:
     {{ input.critique }}
-    
+
     Revise the chapter, incorporating the feedback. Keep approximately the same length.
-  
-  output:
-    revised_text:
-      type: str
-      description: The revised chapter text
+    Write only the revised chapter text.
 
 metadata:
   description: "Revises chapters based on editorial feedback"

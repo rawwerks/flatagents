@@ -6,20 +6,23 @@ spec_version: "0.7.7"
 
 data:
   name: parallelism-demo
-  
+  profiles: ./profiles.yml
+
   context:
     execution_type: "{{ input.type }}"
     texts: "{{ input.texts }}"
     message: "{{ input.message }}"
-  
+    raw_aggregated: null
+
   agents:
     aggregator: ./aggregator_agent.yml
-  
+    aggregator_extractor: ./aggregator_extractor.yml
+
   machines:
     sentiment_machine: ./sentiment_machine.yml
     summarizer_machine: ./summarizer_machine.yml
     notification_machine: ./notification_machine.yml
-  
+
   states:
     start:
       type: initial
@@ -31,7 +34,7 @@ data:
         - condition: "context.execution_type == 'background_notifications'"
           to: launch_notifications
         - to: done
-    
+
     # Pattern 1: Parallel machine execution with machine: [a, b, c]
     parallel_aggregate:
       # Run summarization and sentiment analysis in parallel
@@ -42,16 +45,29 @@ data:
         parallel_results: "{{ output }}"
       transitions:
         - to: aggregate_results
-    
+
     aggregate_results:
       agent: aggregator
       input:
         parallel_data: "{{ context.parallel_results }}"
       output_to_context:
+        raw_aggregated: "{{ output.content }}"
+      transitions:
+        - to: extract_aggregated
+
+    extract_aggregated:
+      agent: aggregator_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_aggregated }}"
+      output_to_context:
         final_result: "{{ output.aggregated }}"
       transitions:
         - to: done
-    
+
     # Pattern 2: Dynamic parallelism with foreach
     foreach_analysis:
       foreach: "{{ context.texts }}"
@@ -63,7 +79,7 @@ data:
         sentiment_results: "{{ output }}"
       transitions:
         - to: done
-    
+
     # Pattern 3: Fire-and-forget launches
     launch_notifications:
       launch: notification_machine
@@ -72,7 +88,7 @@ data:
         recipients: ["admin@example.com", "user@example.com", "system@example.com"]
       transitions:
         - to: done
-    
+
     done:
       type: final
       output:

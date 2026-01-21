@@ -11,5 +11,9 @@ data:
       provider: cerebras
       name: zai-glm-4.7
       temperature: 0.6
+    fast:
+      provider: cerebras
+      name: zai-glm-4.7
+      temperature: 1.0
 
   default: default

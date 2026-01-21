@@ -6,19 +6,37 @@ spec_version: "0.7.7"
 
 data:
   name: sentiment-machine
-  
+  profiles: ./profiles.yml
+
+  context:
+    raw_sentiment: null
+
   agents:
     sentiment: ./sentiment_agent.yml
-  
+    sentiment_extractor: ./sentiment_extractor.yml
+
   states:
     start:
       type: initial
       agent: sentiment
       output_to_context:
+        raw_sentiment: "{{ output.content }}"
+      transitions:
+        - to: extract_sentiment
+
+    extract_sentiment:
+      agent: sentiment_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_sentiment }}"
+      output_to_context:
         result: "{{ output }}"
       transitions:
         - to: done
-    
+
     done:
       type: final
       output:

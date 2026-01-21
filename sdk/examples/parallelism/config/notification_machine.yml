@@ -6,19 +6,37 @@ spec_version: "0.7.7"
 
 data:
   name: notification-machine
-  
+  profiles: ./profiles.yml
+
+  context:
+    raw_notifications: null
+
   agents:
     notifier: ./notifier_agent.yml
-  
+    notifier_extractor: ./notifier_extractor.yml
+
   states:
     start:
       type: initial
       agent: notifier
       output_to_context:
+        raw_notifications: "{{ output.content }}"
+      transitions:
+        - to: extract_notifications
+
+    extract_notifications:
+      agent: notifier_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_notifications }}"
+      output_to_context:
         notifications: "{{ output }}"
       transitions:
         - to: done
-    
+
     done:
       type: final
 

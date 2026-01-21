@@ -9,7 +9,7 @@ spec_version: "0.7.7"
 data:
   name: refiner
   profiles: ./profiles.yml
-  
+
   context:
     # Input from parent
     title: "{{ input.title }}"
@@ -20,16 +20,21 @@ data:
     technical_details: "{{ input.technical_details }}"
     results: "{{ input.results }}"
     reference_count: "{{ input.reference_count }}"
+    # Raw outputs
+    raw_summary: null
+    raw_critique: null
     # Refinement state
     summary: null
     critique: null
     quality_score: 0
     iteration: 0
-  
+
   agents:
     synthesizer: ./synthesizer.yml
+    summary_extractor: ./summary_extractor.yml
     critic: ./critic.yml
-  
+    critique_extractor: ./critique_extractor.yml
+
   states:
     start:
       type: initial
@@ -55,8 +60,21 @@ data:
         critique: "{{ context.critique }}"
         iteration: "{{ context.iteration }}"
       output_to_context:
-        summary: "{{ output.summary }}"
+        raw_summary: "{{ output.content }}"
         iteration: "{{ context.iteration + 1 }}"
+      transitions:
+        - to: extract_summary
+
+    extract_summary:
+      agent: summary_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_summary }}"
+      output_to_context:
+        summary: "{{ output.summary }}"
       transitions:
         - to: critique
 
@@ -71,6 +89,19 @@ data:
         summary: "{{ context.summary }}"
         key_findings: "{{ context.key_findings }}"
         methodology: "{{ context.methodology }}"
+      output_to_context:
+        raw_critique: "{{ output.content }}"
+      transitions:
+        - to: extract_critique
+
+    extract_critique:
+      agent: critique_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_critique }}"
       output_to_context:
         quality_score: "{{ output.quality_score }}"
         critique: "{{ output.critique }}"

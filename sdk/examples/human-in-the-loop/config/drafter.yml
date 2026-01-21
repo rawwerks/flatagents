@@ -6,26 +6,23 @@ spec_version: "0.7.7"
 
 data:
   name: content-drafter
-  
-  model:
-    provider: cerebras
-    name: zai-glm-4.6
-    temperature: 0.6
-  
+
+  model: creative
+
   system: |
     You are a skilled content writer. Generate clear, engaging content
     based on the given topic.
-    
+
     {% if input.previous_draft and input.feedback %}
     Your previous draft:
     {{ input.previous_draft }}
-    
+
     Human feedback to address:
     {{ input.feedback }}
-    
+
     Please revise your draft based on this feedback.
     {% endif %}
-  
+
   user: |
     {% if input.previous_draft and input.feedback %}
     Please revise the draft about "{{ input.topic }}" based on the feedback provided.
@@ -33,15 +30,7 @@ data:
     Please write a short piece about: {{ input.topic }}
     {% endif %}
 
-    Respond with JSON: {"content": "your content here", "confidence": 0.0-1.0}
-  
-  output:
-    content:
-      type: str
-      description: The generated or revised content
-    confidence:
-      type: float
-      description: How confident you are in this draft (0-1)
+    Write the content and indicate your confidence level (0-1) in this draft.
 
 metadata:
   description: "Content drafting agent with feedback incorporation"

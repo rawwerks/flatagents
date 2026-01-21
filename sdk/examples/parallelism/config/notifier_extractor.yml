@@ -1,0 +1,25 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: notifier-extractor
+  model: fast
+  system: Extract the notification results from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"formatted_messages": [{"recipient": "...", "message": "...", "timestamp": "..."}], "delivery_status": "ready|failed", "summary": "brief status"}
+  output:
+    formatted_messages:
+      type: array
+      description: Formatted messages for each recipient
+    delivery_status:
+      type: str
+      description: Status of notification preparation
+    summary:
+      type: str
+      description: Brief status description
+
+metadata:
+  author: flatagents
+  description: Extracts notification results from raw text output

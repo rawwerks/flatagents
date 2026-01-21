@@ -33,24 +33,7 @@ data:
     - {{ change }}
     {% endfor %}
 
-    Provide a brief summary suitable for a technical report.
-
-    Respond with JSON: {"summary": "...", "key_insights": ["..."], "recommendations": ["..."]}
-
-  output:
-    summary:
-      type: str
-      description: "Executive summary of the optimization run"
-    key_insights:
-      type: list
-      description: "Most important findings from the optimization"
-      items:
-        type: str
-    recommendations:
-      type: list
-      description: "Recommendations for further improvement"
-      items:
-        type: str
+    Provide a brief summary suitable for a technical report, including key insights and recommendations.
 
 metadata:
   description: "Generates summaries of optimization runs"

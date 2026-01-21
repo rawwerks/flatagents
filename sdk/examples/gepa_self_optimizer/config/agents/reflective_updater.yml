@@ -50,31 +50,8 @@ data:
     - input.response - the agent response being judged
     - input.context - additional evaluation context (optional, wrap in conditional)
 
-    Provide your new instructions below.
-
-    Respond with JSON: {"new_instruction": "...", "factual_knowledge_extracted": ["..."], "strategies_preserved": ["..."], "corrections_made": ["..."]}
-
-  output:
-    new_instruction:
-      type: str
-      description: |
-        The improved instruction with both SYSTEM PROMPT and USER PROMPT TEMPLATE sections.
-        Must incorporate learnings from traces while preserving template variables.
-    factual_knowledge_extracted:
-      type: list
-      description: "Domain-specific facts learned from feedback (e.g., 'PASS means no errors', 'severity should match error impact')"
-      items:
-        type: str
-    strategies_preserved:
-      type: list
-      description: "Successful strategies kept from original (e.g., 'structured reasoning before verdict')"
-      items:
-        type: str
-    corrections_made:
-      type: list
-      description: "Specific corrections based on failures (e.g., 'Added guidance for edge case X')"
-      items:
-        type: str
+    Provide the new instruction, factual knowledge extracted, strategies preserved,
+    and corrections made.
 
 metadata:
   description: "GEPA reflective prompt mutation based on execution traces"

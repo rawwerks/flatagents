@@ -1,0 +1,33 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: processed-extractor
+  model: fast
+  system: Extract the processing results from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Extract the answer, evidence (with quote and location), confidence level, whether chunk contains answer, and any additional context needed.
+
+    Respond with JSON: {"answer": "...", "evidence": [{"quote": "...", "location": "..."}], "confidence": "high|medium|low", "contains_answer": true/false, "additional_context_needed": "..."}
+  output:
+    answer:
+      type: str
+      description: The answer to the sub-task question
+    evidence:
+      type: list
+      description: List of evidence items supporting the answer
+    confidence:
+      type: str
+      description: Confidence level (high, medium, or low)
+    contains_answer:
+      type: bool
+      description: Whether this chunk contains relevant information
+    additional_context_needed:
+      type: str
+      description: Description of any additional context that would help
+
+metadata:
+  author: flatagents
+  description: Extracts processed results from raw text output

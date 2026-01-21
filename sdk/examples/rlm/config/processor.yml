@@ -35,35 +35,7 @@ data:
     - Your answer (or indication that the chunk doesn't contain the answer)
     - Key evidence from the chunk that supports your answer
     - Confidence level (high/medium/low)
-
-    Respond with JSON: {"answer": "...", "evidence": [{"quote": "...", "location": "..."}], "confidence": "high|medium|low", "contains_answer": true/false, "additional_context_needed": "..."}
-
-  output:
-    answer:
-      type: str
-      description: "The answer to the sub-task question"
-    evidence:
-      type: list
-      description: "List of evidence items supporting the answer"
-      items:
-        type: object
-        properties:
-          quote:
-            type: str
-            description: "Relevant quote from the chunk"
-          location:
-            type: str
-            description: "Approximate location in the chunk"
-    confidence:
-      type: str
-      description: "Confidence level: high, medium, or low"
-      enum: ["high", "medium", "low"]
-    contains_answer:
-      type: bool
-      description: "Whether this chunk contains relevant information"
-    additional_context_needed:
-      type: str
-      description: "Description of any additional context that would help"
+    - Whether any additional context would be needed
 
 metadata:
   description: "Processes a single chunk to answer a sub-task"

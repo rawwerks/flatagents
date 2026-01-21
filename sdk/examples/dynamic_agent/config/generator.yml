@@ -6,58 +6,41 @@ spec_version: "0.7.7"
 
 data:
   name: otf-generator
-  
+
   model: creative
-  
+
   system: |
     You are an expert at designing specialized AI writing agents.
-    
+
     Given a creative writing task, you generate a complete agent specification
     that would be optimal for that specific task.
-    
-    You MUST return your response as valid JSON with these exact fields:
+
+    You should provide:
     - name: A short name for the specialized agent
-    - system: The system prompt for the agent (detailed, personality-rich)  
+    - system: The system prompt for the agent (detailed, personality-rich)
     - user: The user prompt template (use {{ input.task }} to reference the task)
     - temperature: Either 0.6 (creative) or 1.0 (default)
     - output_fields: An object defining what the agent should return
-    
+
     Temperature guidelines:
     - 1.0 for default/neutral generation
     - 0.6 for creative writing
-    
+
     If previous concerns are provided, address them in your new design.
-  
+
   user: |
     Task: {{ input.task }}
     {% if input.style_hints %}
     Style hints: {{ input.style_hints }}
     {% endif %}
     {% if input.previous_concerns %}
-    
+
     PREVIOUS ATTEMPT CONCERNS (address these):
     {{ input.previous_concerns }}
     {% endif %}
-    
+
     Generate a specialized agent specification for this task.
-    Return ONLY valid JSON with: name, system, user, temperature, output_fields
-  
-  output:
-    name:
-      type: str
-      description: "Short name for this specialized agent"
-    system:
-      type: str
-      description: "System prompt for the agent"
-    user:
-      type: str
-      description: "User prompt template"
-    temperature:
-      type: float
-      description: "Temperature setting (0.6 for creative or 1.0 for default)"
-    output_fields:
-      type: json
-      description: "Output schema as JSON object"
+    Provide the name, system prompt, user prompt template, temperature, and output fields.
 
 metadata:
   description: "Generates specialized creative writing agents"

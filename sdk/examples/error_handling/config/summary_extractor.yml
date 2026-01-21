@@ -1,0 +1,19 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: summary-extractor
+  model: fast
+  system: Extract the error summary from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"summary": "the extracted error summary"}
+  output:
+    summary:
+      type: str
+      description: The extracted error summary
+
+metadata:
+  author: flatagents
+  description: Extracts summary from raw text output

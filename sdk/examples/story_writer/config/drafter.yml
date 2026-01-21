@@ -4,26 +4,22 @@ spec_version: "0.7.7"
 
 data:
   name: chapter-drafter
-  
+
   model: creative
-  
+
   system: |
     You are a creative fiction writer. Write engaging prose with vivid descriptions,
     natural dialogue, and compelling character voices. Match the genre's conventions.
-  
+
   user: |
     Write Chapter {{ input.chapter_number }} of "{{ input.title }}" ({{ input.genre }}).
-    
+
     Chapter outline: {{ input.outline }}
-    
+
     Previous chapter summary: {{ input.previous_summary }}
-    
+
     Write approximately 500-800 words. Include scene-setting, dialogue, and action.
-  
-  output:
-    chapter_text:
-      type: str
-      description: The drafted chapter text
+    Write only the chapter text.
 
 metadata:
   description: "Drafts a single chapter based on outline"

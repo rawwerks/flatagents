@@ -1,0 +1,30 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: subquery-extractor
+  model: fast
+  system: Extract the decomposition details from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Extract whether decomposition is needed, the sub-tasks (with id, question, chunk_start, chunk_end, contribution, priority), the aggregation strategy, and any direct answer if no decomposition is needed.
+
+    Respond with JSON: {"needs_decomposition": true/false, "sub_tasks": [{"id": "...", "question": "...", "chunk_start": 0, "chunk_end": 100, "contribution": "...", "priority": 1}], "aggregation_strategy": "concat|sum|vote|synthesize", "direct_answer": "..."}
+  output:
+    needs_decomposition:
+      type: bool
+      description: Whether the task needs to be decomposed into sub-tasks
+    sub_tasks:
+      type: list
+      description: List of sub-tasks to process recursively
+    aggregation_strategy:
+      type: str
+      description: How to combine sub-task results
+    direct_answer:
+      type: str
+      description: Direct answer if no decomposition needed
+
+metadata:
+  author: flatagents
+  description: Extracts decomposition details from raw text output

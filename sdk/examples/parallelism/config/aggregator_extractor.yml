@@ -1,0 +1,25 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: aggregator-extractor
+  model: fast
+  system: Extract the aggregation results from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"aggregated": "unified summary", "insights": ["insight1", "insight2"], "execution_summary": "overview"}
+  output:
+    aggregated:
+      type: str
+      description: Unified summary combining all parallel results
+    insights:
+      type: array
+      description: Key insights from combined data
+    execution_summary:
+      type: str
+      description: Brief overview of what was processed
+
+metadata:
+  author: flatagents
+  description: Extracts aggregation results from raw text output

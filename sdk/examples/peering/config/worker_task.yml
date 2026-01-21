@@ -2,11 +2,14 @@ spec: flatmachine
 spec_version: "0.7.7"
 data:
   name: worker_task
+  profiles: ./profiles.yml
   context:
     task: "{{ input.task }}"
     data: "{{ input.data }}"
+    raw_result: null
   agents:
     worker: ./worker.yml
+    result_extractor: ./result_extractor.yml
   states:
     run_task:
       type: initial
@@ -14,6 +17,18 @@ data:
       input:
         task: "{{ context.task }}"
         data: "{{ context.data }}"
+      output_to_context:
+        raw_result: "{{ output.content }}"
+      transitions:
+        - to: extract_result
+    extract_result:
+      agent: result_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_result }}"
       output_to_context:
         result: "{{ output.result }}"
       transitions:

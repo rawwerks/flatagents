@@ -4,32 +4,22 @@ spec_version: "0.7.7"
 
 data:
   name: story-outliner
-  
+
   model: creative
-  
+
   system: |
     You are a master storyteller and plot architect. Create engaging story outlines
     with clear chapter summaries that build tension and character development.
-  
+
   user: |
     Create an outline for a {{ input.genre }} story.
-    
+
     Premise: {{ input.premise }}
     Number of chapters: {{ input.num_chapters }}
-    
+
     Provide:
     1. A compelling title
     2. A brief summary for each chapter (2-3 sentences each)
-
-    Respond with JSON: {"title": "story title", "chapter_outlines": ["chapter 1 summary", "chapter 2 summary", ...]}
-  
-  output:
-    title:
-      type: str
-      description: Story title
-    chapter_outlines:
-      type: list
-      description: List of chapter summaries
 
 metadata:
   description: "Creates story structure and chapter outlines"

@@ -1,0 +1,28 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: response-extractor
+  model: fast
+  system: Extract the response details from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"response": "the response", "has_error": true/false, "error_description": "description if error", "expected_verdict": "PASS|FAIL_MINOR|FAIL_MAJOR|FAIL_CRITICAL"}
+  output:
+    response:
+      type: str
+      description: The generated response to the task
+    has_error:
+      type: bool
+      description: Whether this response contains an intentional error
+    error_description:
+      type: str
+      description: Description of the error introduced
+    expected_verdict:
+      type: str
+      description: What verdict a good judge should give
+
+metadata:
+  author: flatagents
+  description: Extracts response details from raw text output

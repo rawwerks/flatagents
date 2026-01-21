@@ -47,22 +47,8 @@ data:
     Introduce a {{ input.error_type }} error. Make it subtle but detectable.
     {% endif %}
 
-    Respond with JSON: {"response": "...", "has_error": true/false, "error_description": "...", "expected_verdict": "PASS|FAIL_MINOR|FAIL_MAJOR|FAIL_CRITICAL"}
-
-  output:
-    response:
-      type: str
-      description: "The generated response to the task"
-    has_error:
-      type: bool
-      description: "Whether this response contains an intentional error"
-    error_description:
-      type: str
-      description: "Description of the error introduced (empty if no error)"
-    expected_verdict:
-      type: str
-      description: "What verdict a good judge should give"
-      enum: ["PASS", "FAIL_MINOR", "FAIL_MAJOR", "FAIL_CRITICAL"]
+    Provide the response, indicate if it has an error, describe the error (if any),
+    and what verdict a good judge should give.
 
 metadata:
   description: "Generates test responses with controlled errors"

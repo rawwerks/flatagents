@@ -4,31 +4,48 @@ spec_version: "0.7.7"
 data:
   name: error-handling-demo
   profiles: ./profiles.yml
-  
+
   context:
     task: "{{ input.task }}"
-  
+    raw_result: null
+    raw_summary: null
+
   agents:
     worker: ./worker.yml
+    result_extractor: ./result_extractor.yml
     broken: ./nonexistent.yml
     cleanup: ./cleanup.yml
-  
+    summary_extractor: ./summary_extractor.yml
+
   states:
     start:
       type: initial
       transitions:
         - to: do_work
-    
+
     do_work:
       agent: broken
       on_error: handle_error
       input:
         task: "{{ context.task }}"
       output_to_context:
+        raw_result: "{{ output.content }}"
+      transitions:
+        - to: extract_result
+
+    extract_result:
+      agent: result_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_result }}"
+      output_to_context:
         result: "{{ output.result }}"
       transitions:
         - to: done
-    
+
     handle_error:
       agent: cleanup
       execution:
@@ -39,16 +56,29 @@ data:
         error_type: "{{ context.last_error_type }}"
         state: do_work
       output_to_context:
+        raw_summary: "{{ output.content }}"
+      transitions:
+        - to: extract_summary
+
+    extract_summary:
+      agent: summary_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_summary }}"
+      output_to_context:
         summary: "{{ output.summary }}"
       transitions:
         - to: failed
-    
+
     done:
       type: final
       output:
         success: true
         result: "{{ context.result }}"
-    
+
     failed:
       type: final
       output:

@@ -1,0 +1,19 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: revision-extractor
+  model: fast
+  system: Extract the revised chapter text from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"revised_text": "the full revised chapter text"}
+  output:
+    revised_text:
+      type: str
+      description: The extracted revised chapter text
+
+metadata:
+  author: flatagents
+  description: Extracts revised text from raw text output

@@ -1,0 +1,22 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: review-extractor
+  model: fast
+  system: Extract the review score and feedback from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"score": 1-10, "feedback": "the extracted detailed feedback"}
+  output:
+    score:
+      type: int
+      description: Score from 1-10
+    feedback:
+      type: str
+      description: Detailed feedback
+
+metadata:
+  author: flatagents
+  description: Extracts review from raw text output

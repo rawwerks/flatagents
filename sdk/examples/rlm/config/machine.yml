@@ -25,8 +25,10 @@ data:
     suggested_chunks: []
     content_type: null
     structure_summary: null
+    raw_exploration: null
 
     # Decomposition state
+    raw_decomposition: null
     needs_decomposition: false
     sub_tasks: []
     aggregation_strategy: null
@@ -34,15 +36,21 @@ data:
     # Processing state
     sub_task_results: []
 
+    # Synthesis state
+    raw_synthesis: null
+
     # Final result
     final_answer: null
     confidence: null
 
   agents:
     explorer: ./explorer.yml
+    findings_extractor: ./findings_extractor.yml
     decomposer: ./decomposer.yml
+    subquery_extractor: ./subquery_extractor.yml
     processor: ./processor.yml
     synthesizer: ./synthesizer.yml
+    answer_extractor: ./answer_extractor.yml
 
   # Peer machine for parallel chunk processing
   machines:
@@ -71,11 +79,24 @@ data:
         exploration_history: "{{ context.exploration_history }}"
       output_to_context:
         exploration_round: "{{ context.exploration_round + 1 }}"
+        raw_exploration: "{{ output.content }}"
+      on_error: explore_error
+      transitions:
+        - to: extract_exploration
+
+    extract_exploration:
+      agent: findings_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_exploration }}"
+      output_to_context:
         code: "{{ output.code }}"
         ready_to_answer: "{{ output.ready_to_answer }}"
         findings: "{{ output.findings }}"
         suggested_chunks: "{{ output.suggested_chunks }}"
-      on_error: explore_error
       transitions:
         - to: execute_exploration_code
 
@@ -112,6 +133,19 @@ data:
         exploration_findings: "{{ context.exploration_findings }}"
         suggested_chunks: "{{ context.suggested_chunks }}"
         max_chunk_size: "{{ context.max_chunk_size }}"
+      output_to_context:
+        raw_decomposition: "{{ output.content }}"
+      transitions:
+        - to: extract_decomposition
+
+    extract_decomposition:
+      agent: subquery_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_decomposition }}"
       output_to_context:
         needs_decomposition: "{{ output.needs_decomposition }}"
         sub_tasks: "{{ output.sub_tasks }}"
@@ -150,6 +184,19 @@ data:
         task: "{{ context.task }}"
         aggregation_strategy: "{{ context.aggregation_strategy }}"
         sub_task_results: "{{ context.sub_task_results }}"
+      output_to_context:
+        raw_synthesis: "{{ output.content }}"
+      transitions:
+        - to: extract_synthesis
+
+    extract_synthesis:
+      agent: answer_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_synthesis }}"
       output_to_context:
         final_answer: "{{ output.final_answer }}"
         confidence: "{{ output.confidence }}"

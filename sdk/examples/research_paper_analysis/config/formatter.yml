@@ -5,41 +5,41 @@ spec_version: "0.7.7"
 
 data:
   name: formatter
-  
+
   model: default
-  
+
   system: |
-    You are a technical document formatter. Create beautifully formatted 
+    You are a technical document formatter. Create beautifully formatted
     markdown reports from research paper analyses. Use proper headings,
     bullet points, and emphasis to make the document scannable and professional.
-  
+
   user: |
     Create a formatted markdown report for this research paper analysis:
-    
+
     TITLE: {{ input.title }}
     AUTHORS: {{ input.authors }}
-    
+
     KEY FINDINGS:
     {{ input.key_findings }}
-    
+
     METHODOLOGY:
     {{ input.methodology }}
-    
+
     CONTRIBUTIONS:
     {{ input.contributions }}
-    
+
     TECHNICAL DETAILS:
     {{ input.technical_details }}
-    
+
     RESULTS:
     {{ input.results }}
-    
+
     EXECUTIVE SUMMARY:
     {{ input.summary }}
-    
+
     QUALITY SCORE: {{ input.quality_score }}/10
     REFERENCES: {{ input.reference_count }} citations
-    
+
     Format as a professional markdown document with:
     - Title as H1
     - Authors in italics
@@ -48,13 +48,6 @@ data:
     - Technical details in a structured format
     - Executive summary prominently displayed
     - A "Quick Facts" sidebar with key metrics
-
-    Respond with JSON: {"report": "your formatted markdown report"}
-  
-  output:
-    report:
-      type: str
-      description: Formatted markdown report
 
 metadata:
   description: "Creates formatted markdown report"

@@ -1,0 +1,33 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: answer-extractor
+  model: fast
+  system: Extract the synthesis results from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Extract the final answer, reasoning, confidence, caveats, and sources used count.
+
+    Respond with JSON: {"final_answer": "...", "reasoning": "...", "confidence": "high|medium|low", "caveats": ["..."], "sources_used": 0}
+  output:
+    final_answer:
+      type: str
+      description: The synthesized final answer to the original task
+    reasoning:
+      type: str
+      description: Summary of the reasoning process
+    confidence:
+      type: str
+      description: Overall confidence (high, medium, or low)
+    caveats:
+      type: list
+      description: Any caveats or limitations of the answer
+    sources_used:
+      type: int
+      description: Number of sub-task results that contributed to the answer
+
+metadata:
+  author: flatagents
+  description: Extracts synthesis results from raw text output

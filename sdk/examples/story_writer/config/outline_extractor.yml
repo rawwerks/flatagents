@@ -1,0 +1,22 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: outline-extractor
+  model: fast
+  system: Extract the story title and chapter outlines from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"title": "the story title", "chapter_outlines": ["chapter 1 summary", "chapter 2 summary", ...]}
+  output:
+    title:
+      type: str
+      description: The extracted story title
+    chapter_outlines:
+      type: list
+      description: The extracted list of chapter summaries
+
+metadata:
+  author: flatagents
+  description: Extracts title and chapter outlines from raw text output

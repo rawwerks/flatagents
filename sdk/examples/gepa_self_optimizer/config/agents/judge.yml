@@ -43,19 +43,8 @@ data:
     3. Is anything important missing?
     4. Would following this response lead to the correct outcome?
 
-    Respond with JSON: {"verdict": "PASS|FAIL_MINOR|FAIL_MAJOR|FAIL_CRITICAL", "reasoning": "...", "confidence": 0.0-1.0}
-
-  output:
-    verdict:
-      type: str
-      description: "Overall judgment of the response"
-      enum: ["PASS", "FAIL_MINOR", "FAIL_MAJOR", "FAIL_CRITICAL"]
-    reasoning:
-      type: str
-      description: "Detailed explanation of the evaluation, including specific issues found"
-    confidence:
-      type: float
-      description: "Confidence in this judgment from 0.0 to 1.0"
+    Provide your verdict (PASS, FAIL_MINOR, FAIL_MAJOR, or FAIL_CRITICAL),
+    your reasoning, and your confidence level (0-1).
 
 metadata:
   description: "GEPA Judge for evaluating agent outputs"

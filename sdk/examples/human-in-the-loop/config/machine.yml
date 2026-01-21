@@ -6,26 +6,29 @@ spec_version: "0.7.7"
 
 data:
   name: human-in-loop
-  
+  profiles: ./profiles.yml
+
   # Initial context
   context:
     topic: "{{ input.topic }}"
+    raw_draft: null
     draft: null
     human_approved: false
     max_revisions: "{{ input.max_revisions | default(3) }}"
     revision_count: 0
-  
+
   # Agent references
   agents:
     drafter: ./drafter.yml
-  
+    draft_extractor: ./draft_extractor.yml
+
   # State machine
   states:
     start:
       type: initial
       transitions:
         - to: generate_draft
-    
+
     generate_draft:
       agent: drafter
       execution:
@@ -36,11 +39,24 @@ data:
         previous_draft: "{{ context.draft }}"
         feedback: "{{ context.human_feedback }}"
       output_to_context:
-        draft: "{{ output.content }}"
+        raw_draft: "{{ output.content }}"
         revision_count: "{{ context.revision_count + 1 }}"
       transitions:
+        - to: extract_draft
+
+    extract_draft:
+      agent: draft_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_draft }}"
+      output_to_context:
+        draft: "{{ output.content }}"
+      transitions:
         - to: await_human_review
-    
+
     await_human_review:
       # This state pauses for human input via the hook
       action: human_review
@@ -50,14 +66,14 @@ data:
         - condition: "context.revision_count >= context.max_revisions"
           to: max_revisions_reached
         - to: generate_draft
-    
+
     max_revisions_reached:
       type: final
       output:
         content: "{{ context.draft }}"
         status: "max_revisions_reached"
         revisions: "{{ context.revision_count }}"
-    
+
     done:
       type: final
       output:

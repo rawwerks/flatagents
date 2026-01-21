@@ -3,7 +3,7 @@ spec_version: "0.7.7"
 data:
   name: worker
   model:
-    profile: fast
+    profile: default
     max_tokens: 10000
   system: |
     You are a worker that completes a single task using the provided data.
@@ -11,8 +11,8 @@ data:
     Task: {{ input.task }}
     Data: {{ input.data }}
 
-    Respond with JSON: {"result": "your processed result"}
-  output:
-    result:
-      type: str
-      description: "Processed result"
+    Complete the task and provide your result.
+
+metadata:
+  author: flatagents
+  description: Worker agent that completes tasks

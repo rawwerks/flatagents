@@ -8,7 +8,7 @@ spec_version: "0.7.7"
 data:
   name: research-pipeline
   profiles: ./profiles.yml
-  
+
   context:
     # Pre-parsed structured input
     title: "{{ input.title }}"
@@ -27,17 +27,19 @@ data:
     # Refined summary
     summary: null
     quality_score: 0
-    # Final formatted output
+    # Raw and final formatted output
+    raw_report: null
     formatted_report: null
-  
+
   agents:
     formatter: ./formatter.yml
-  
+    report_extractor: ./report_extractor.yml
+
   # Peer machines
   machines:
     analyzer: ./analyzer_machine.yml
     refiner: ./refiner_machine.yml
-  
+
   states:
     start:
       type: initial
@@ -96,6 +98,19 @@ data:
         summary: "{{ context.summary }}"
         quality_score: "{{ context.quality_score }}"
         reference_count: "{{ context.reference_count }}"
+      output_to_context:
+        raw_report: "{{ output.content }}"
+      transitions:
+        - to: extract_report
+
+    extract_report:
+      agent: report_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_report }}"
       output_to_context:
         formatted_report: "{{ output.report }}"
       transitions:

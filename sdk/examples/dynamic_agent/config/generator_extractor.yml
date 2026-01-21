@@ -1,0 +1,31 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: generator-extractor
+  model: fast
+  system: Extract the agent specification from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"name": "agent name", "system": "system prompt", "user": "user prompt template", "temperature": 0.6, "output_fields": {}}
+  output:
+    name:
+      type: str
+      description: Short name for this specialized agent
+    system:
+      type: str
+      description: System prompt for the agent
+    user:
+      type: str
+      description: User prompt template
+    temperature:
+      type: float
+      description: Temperature setting
+    output_fields:
+      type: json
+      description: Output schema as JSON object
+
+metadata:
+  author: flatagents
+  description: Extracts generator result from raw text output

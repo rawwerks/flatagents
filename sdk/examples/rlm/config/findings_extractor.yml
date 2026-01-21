@@ -1,0 +1,33 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: findings-extractor
+  model: fast
+  system: Extract the exploration details from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Extract whether ready to answer, the code to execute, reasoning, findings, and suggested chunks.
+
+    Respond with JSON: {"ready_to_answer": true/false, "code": "python code", "reasoning": "explanation", "findings": "summary if ready", "suggested_chunks": [{"start": 0, "end": 100, "reason": "why"}]}
+  output:
+    ready_to_answer:
+      type: bool
+      description: True if enough information has been gathered to answer the task
+    code:
+      type: str
+      description: Python code to execute in the REPL
+    reasoning:
+      type: str
+      description: Explanation of what the code does and why
+    findings:
+      type: str
+      description: Summary of findings if ready to answer
+    suggested_chunks:
+      type: list
+      description: List of chunks that need deeper analysis
+
+metadata:
+  author: flatagents
+  description: Extracts exploration findings from raw text output

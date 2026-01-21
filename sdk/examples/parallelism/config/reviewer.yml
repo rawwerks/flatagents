@@ -1,16 +1,14 @@
 spec: flatagent
-spec_version: "1.0"
+spec_version: "0.7.7"
 data:
   name: reviewer
-  model:
-    name: gpt-4o-mini
-    provider: openai
-  system: "You are a {{ type }} reviewer. Review the provided document and give your assessment."
-  user: "Document: {{ document }}\n\nYour review as a {{ type }}:\n\nRespond with JSON: {\"score\": 1-10, \"feedback\": \"your detailed feedback\"}"
-  output:
-    score:
-      type: int
-      description: "Score from 1-10"
-    feedback:
-      type: str
-      description: "Detailed feedback"
+  model: default
+  system: "You are a {{ input.type }} reviewer. Review the provided document and give your assessment."
+  user: |
+    Document: {{ input.document }}
+
+    Your review as a {{ input.type }} reviewer.
+
+metadata:
+  author: flatagents
+  description: Document reviewer agent

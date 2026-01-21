@@ -45,40 +45,9 @@ data:
   user: |
     Based on the task and any previous exploration, generate the next Python code to run.
 
-    If you have gathered enough information to answer the task, set `ready_to_answer` to true and provide your `findings`.
+    If you have gathered enough information to answer the task, indicate you are ready and provide your findings.
 
-    Otherwise, provide `code` to execute next and explain your `reasoning`.
-
-    Respond with JSON: {"ready_to_answer": true/false, "code": "python code", "reasoning": "explanation", "findings": "summary if ready", "suggested_chunks": [{"start": 0, "end": 100, "reason": "why"}]}
-
-  output:
-    ready_to_answer:
-      type: bool
-      description: "True if enough information has been gathered to answer the task"
-    code:
-      type: str
-      description: "Python code to execute in the REPL (if not ready to answer)"
-    reasoning:
-      type: str
-      description: "Explanation of what the code does and why"
-    findings:
-      type: str
-      description: "Summary of findings (if ready to answer)"
-    suggested_chunks:
-      type: list
-      description: "List of (start, end) tuples for chunks that need deeper analysis"
-      items:
-        type: object
-        properties:
-          start:
-            type: int
-            description: "Start index of the chunk"
-          end:
-            type: int
-            description: "End index of the chunk"
-          reason:
-            type: str
-            description: "Why this chunk is relevant"
+    Otherwise, provide the code to execute next and explain your reasoning. Also suggest any specific chunks (with start:end indices) that need deeper analysis.
 
 metadata:
   description: "Explores long context via REPL code execution"

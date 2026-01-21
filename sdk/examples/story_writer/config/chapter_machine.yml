@@ -7,22 +7,28 @@ spec_version: "0.7.7"
 data:
   name: chapter-writer
   profiles: ./profiles.yml
-  
+
   context:
     genre: "{{ input.genre }}"
     title: "{{ input.title }}"
     chapter_number: "{{ input.chapter_number }}"
     chapter_outline: "{{ input.chapter_outline }}"
     previous_chapters: "{{ input.previous_chapters | default([]) }}"
+    raw_draft: null
     draft: null
+    raw_critique: null
     critique: null
+    raw_revision: null
     final_chapter: null
-  
+
   agents:
     drafter: ./drafter.yml
+    chapter_extractor: ./chapter_extractor.yml
     critic: ./critic.yml
+    feedback_extractor: ./feedback_extractor.yml
     reviser: ./reviser.yml
-  
+    revision_extractor: ./revision_extractor.yml
+
   states:
     start:
       type: initial
@@ -38,6 +44,19 @@ data:
         outline: "{{ context.chapter_outline }}"
         previous_summary: "{{ context.previous_chapters[-1][:500] if context.previous_chapters else 'This is the first chapter.' }}"
       output_to_context:
+        raw_draft: "{{ output.content }}"
+      transitions:
+        - to: extract_draft
+
+    extract_draft:
+      agent: chapter_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_draft }}"
+      output_to_context:
         draft: "{{ output.chapter_text }}"
       transitions:
         - to: critique
@@ -49,6 +68,19 @@ data:
         chapter_text: "{{ context.draft }}"
         chapter_outline: "{{ context.chapter_outline }}"
       output_to_context:
+        raw_critique: "{{ output.content }}"
+      transitions:
+        - to: extract_critique
+
+    extract_critique:
+      agent: feedback_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_critique }}"
+      output_to_context:
         critique: "{{ output.feedback }}"
       transitions:
         - to: revise
@@ -58,6 +90,19 @@ data:
       input:
         chapter_text: "{{ context.draft }}"
         critique: "{{ context.critique }}"
+      output_to_context:
+        raw_revision: "{{ output.content }}"
+      transitions:
+        - to: extract_revision
+
+    extract_revision:
+      agent: revision_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_revision }}"
       output_to_context:
         final_chapter: "{{ output.revised_text }}"
       transitions:

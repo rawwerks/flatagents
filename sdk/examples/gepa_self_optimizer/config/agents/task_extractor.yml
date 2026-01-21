@@ -1,0 +1,28 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: task-extractor
+  model: fast
+  system: Extract the task details from the given text. Return only valid JSON.
+  user: |
+    Text: {{ input.text }}
+
+    Respond with JSON: {"task": "task description", "correct_response": "correct response", "evaluation_criteria": "criteria", "key_elements": ["element1", "element2"]}
+  output:
+    task:
+      type: str
+      description: The task description
+    correct_response:
+      type: str
+      description: The complete correct response to the task
+    evaluation_criteria:
+      type: str
+      description: Specific criteria for determining if a response is correct
+    key_elements:
+      type: list
+      description: List of required elements
+
+metadata:
+  author: flatagents
+  description: Extracts task details from raw text output

@@ -4,32 +4,25 @@ spec_version: "0.7.7"
 
 data:
   name: story-critic
-  
+
   model: default
-  
+
   system: |
     You are a skilled writing editor. Provide specific, actionable feedback to improve
     prose quality, pacing, dialogue, and genre conventions. Be constructive but direct.
-  
+
   user: |
     Review this {{ input.genre }} chapter:
-    
+
     Original outline: {{ input.chapter_outline }}
-    
+
     Chapter text:
     {{ input.chapter_text }}
-    
+
     Provide 2-3 specific improvements for:
     - Prose quality and clarity
     - Pacing and tension
     - Character voice and dialogue
-
-    Respond with JSON: {"feedback": "your specific improvements here"}
-  
-  output:
-    feedback:
-      type: str
-      description: Specific improvement suggestions
 
 metadata:
   description: "Critiques chapter drafts with actionable feedback"
