@@ -1,0 +1,28 @@
+{
+  "name": "flatagents-mdap",
+  "version": "0.1.0",
+  "description": "MDAP voting demo for FlatAgents.",
+  "type": "module",
+  "main": "src/mdap/demo.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/mdap/demo.ts",
+    "start": "node dist/mdap/demo.js"
+  },
+  "dependencies": {
+    "flatagents": "file:../../../js",
+    "ajv": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  },
+  "keywords": [
+    "flatagents",
+    "demo",
+    "mdap"
+  ],
+  "author": "",
+  "license": "MIT"
+}

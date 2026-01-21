@@ -1,0 +1,28 @@
+{
+  "name": "flatagents-gepa-self-optimizer",
+  "version": "0.1.0",
+  "description": "GEPA self-optimizer demo for FlatAgents.",
+  "type": "module",
+  "main": "src/gepa_self_optimizer/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/gepa_self_optimizer/main.ts",
+    "start": "node dist/gepa_self_optimizer/main.js"
+  },
+  "dependencies": {
+    "flatagents": "file:../../../js",
+    "yaml": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  },
+  "keywords": [
+    "flatagents",
+    "demo",
+    "gepa"
+  ],
+  "author": "",
+  "license": "MIT"
+}
