@@ -17,14 +17,9 @@ data:
     - Emotional appeal
     - Relevance to the product
 
-    Respond with JSON: {"feedback": "your feedback here", "score": 1-10}
-  output:
-    feedback:
-      type: str
-      description: Constructive feedback on how to improve
-    score:
-      type: int
-      description: Score from 1-10
+    Respond with two lines:
+    Score: <1-10>
+    Feedback: <your feedback here>
 
 metadata:
   author: flatagents

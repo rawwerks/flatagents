@@ -13,6 +13,7 @@ data:
     product: "{{ input.product }}"
     raw_tagline: null
     tagline: null
+    raw_review: null
     feedback: null
     score: 0
     round: 0
@@ -24,6 +25,7 @@ data:
     writer: ./writer.yml
     tagline_extractor: ./tagline_extractor.yml
     critic: ./critic.yml
+    critic_extractor: ./critic_extractor.yml
   
   # State machine
   states:
@@ -69,6 +71,19 @@ data:
       input:
         product: "{{ context.product }}"
         tagline: "{{ context.tagline }}"
+      output_to_context:
+        raw_review: "{{ output.content }}"
+      transitions:
+        - to: extract_review
+
+    extract_review:
+      agent: critic_extractor
+      execution:
+        type: retry
+        backoffs: [2, 8, 16, 35]
+        jitter: 0.1
+      input:
+        text: "{{ context.raw_review }}"
       output_to_context:
         score: "{{ output.score }}"
         feedback: "{{ output.feedback }}"

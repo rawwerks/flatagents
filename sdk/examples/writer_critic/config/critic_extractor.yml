@@ -1,0 +1,26 @@
+spec: flatagent
+spec_version: "0.7.7"
+
+data:
+  name: critic-extractor
+  model: fast
+  system: |
+    Extract the score and feedback from the critique text.
+    Return only valid JSON with keys: score, feedback.
+    The score must be an integer from 1 to 10.
+  user: |
+    Critique text:
+    {{ input.text }}
+
+    Respond with JSON: {"score": 1-10, "feedback": "the extracted feedback"}
+  output:
+    score:
+      type: int
+      description: Score from 1-10
+    feedback:
+      type: str
+      description: Constructive feedback
+
+metadata:
+  author: flatagents
+  description: Extracts structured critique from critic output

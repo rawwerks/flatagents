@@ -19,6 +19,7 @@ data:
     RESEARCH QUESTION: {{ input.research_question }}
     PAPERS ANALYZED: {{ input.paper_count }}
     QUALITY SCORE: {{ input.quality_score }}/10
+    REPORT DATE: {{ input.report_date }}
     
     COMMON THEMES:
     {{ input.common_themes }}
@@ -36,7 +37,7 @@ data:
     {{ input.synthesis }}
     
     Create a professional markdown document with:
-    - Research question as H1, date as subtitle
+    - Research question as H1, date as subtitle (use REPORT DATE)
     - Executive summary prominently displayed
     - Quick facts table (paper count, quality score, key stats)
     - Common themes as bullet points
