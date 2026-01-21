@@ -47,6 +47,8 @@ data:
     Introduce a {{ input.error_type }} error. Make it subtle but detectable.
     {% endif %}
 
+    Respond with JSON: {"response": "...", "has_error": true/false, "error_description": "...", "expected_verdict": "PASS|FAIL_MINOR|FAIL_MAJOR|FAIL_CRITICAL"}
+
   output:
     response:
       type: str

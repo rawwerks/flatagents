@@ -11,7 +11,7 @@ data:
     Task: {{ input.task }}
     Data: {{ input.data }}
 
-    Your result:
+    Respond with JSON: {"result": "your processed result"}
   output:
     result:
       type: str

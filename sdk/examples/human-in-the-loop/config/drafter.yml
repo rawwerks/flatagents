@@ -32,6 +32,8 @@ data:
     {% else %}
     Please write a short piece about: {{ input.topic }}
     {% endif %}
+
+    Respond with JSON: {"content": "your content here", "confidence": 0.0-1.0}
   
   output:
     content:

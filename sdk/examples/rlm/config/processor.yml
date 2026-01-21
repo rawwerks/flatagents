@@ -36,6 +36,8 @@ data:
     - Key evidence from the chunk that supports your answer
     - Confidence level (high/medium/low)
 
+    Respond with JSON: {"answer": "...", "evidence": [{"quote": "...", "location": "..."}], "confidence": "high|medium|low", "contains_answer": true/false, "additional_context_needed": "..."}
+
   output:
     answer:
       type: str

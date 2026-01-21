@@ -48,6 +48,8 @@ data:
 
     If the task is simple enough to answer directly without decomposition, set `needs_decomposition` to false.
 
+    Respond with JSON: {"needs_decomposition": true/false, "sub_tasks": [...], "aggregation_strategy": "concat|sum|vote|synthesize", "direct_answer": "answer if no decomposition needed"}
+
   output:
     needs_decomposition:
       type: bool

@@ -43,6 +43,8 @@ data:
     3. Is anything important missing?
     4. Would following this response lead to the correct outcome?
 
+    Respond with JSON: {"verdict": "PASS|FAIL_MINOR|FAIL_MAJOR|FAIL_CRITICAL", "reasoning": "...", "confidence": 0.0-1.0}
+
   output:
     verdict:
       type: str

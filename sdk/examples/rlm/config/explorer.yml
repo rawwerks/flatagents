@@ -49,6 +49,8 @@ data:
 
     Otherwise, provide `code` to execute next and explain your `reasoning`.
 
+    Respond with JSON: {"ready_to_answer": true/false, "code": "python code", "reasoning": "explanation", "findings": "summary if ready", "suggested_chunks": [{"start": 0, "end": 100, "reason": "why"}]}
+
   output:
     ready_to_answer:
       type: bool

@@ -47,6 +47,8 @@ data:
     
     ---
     Analyze this agent spec. Should it be approved for execution?
+
+    Respond with JSON: {"approved": true/false, "analysis": "strengths", "concerns": "issues or empty"}
   
   output:
     approved:

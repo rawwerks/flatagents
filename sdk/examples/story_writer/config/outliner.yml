@@ -20,6 +20,8 @@ data:
     Provide:
     1. A compelling title
     2. A brief summary for each chapter (2-3 sentences each)
+
+    Respond with JSON: {"title": "story title", "chapter_outlines": ["chapter 1 summary", "chapter 2 summary", ...]}
   
   output:
     title:

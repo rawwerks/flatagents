@@ -48,6 +48,8 @@ data:
     - Technical details in a structured format
     - Executive summary prominently displayed
     - A "Quick Facts" sidebar with key metrics
+
+    Respond with JSON: {"report": "your formatted markdown report"}
   
   output:
     report:

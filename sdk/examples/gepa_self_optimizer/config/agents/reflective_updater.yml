@@ -52,6 +52,8 @@ data:
 
     Provide your new instructions below.
 
+    Respond with JSON: {"new_instruction": "...", "factual_knowledge_extracted": ["..."], "strategies_preserved": ["..."], "corrections_made": ["..."]}
+
   output:
     new_instruction:
       type: str

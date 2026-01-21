@@ -6,7 +6,7 @@ data:
     name: gpt-4o-mini
     provider: openai
   system: "You are a task planning assistant. Generate a task plan based on the request."
-  user: "Request: {{ request }}\n\nGenerate a task plan:"
+  user: "Request: {{ request }}\n\nGenerate a task plan:\n\nRespond with JSON: {\"plan\": {\"steps\": [...]}}"
   output:
     plan:
       type: json

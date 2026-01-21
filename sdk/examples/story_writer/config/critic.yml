@@ -23,6 +23,8 @@ data:
     - Prose quality and clarity
     - Pacing and tension
     - Character voice and dialogue
+
+    Respond with JSON: {"feedback": "your specific improvements here"}
   
   output:
     feedback:

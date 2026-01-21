@@ -53,6 +53,8 @@ data:
     - Your confidence in the answer
     - Any caveats or limitations
 
+    Respond with JSON: {"final_answer": "...", "reasoning": "...", "confidence": "high|medium|low", "caveats": ["..."], "sources_used": 0}
+
   output:
     final_answer:
       type: str

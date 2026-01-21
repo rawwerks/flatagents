@@ -36,6 +36,8 @@ data:
     2. The correct solution/response
     3. Specific criteria for evaluating correctness
 
+    Respond with JSON: {"task": "...", "correct_response": "...", "evaluation_criteria": "...", "key_elements": ["..."]}
+
   output:
     task:
       type: str

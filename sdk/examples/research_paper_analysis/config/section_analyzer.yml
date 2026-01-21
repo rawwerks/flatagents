@@ -27,6 +27,8 @@ data:
     Extract:
     1. Technical details about the approach/architecture
     2. Key experimental results and metrics
+
+    Respond with JSON: {"technical_details": "...", "results": "..."}
   
   output:
     technical_details:

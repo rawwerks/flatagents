@@ -35,6 +35,8 @@ data:
     - Impact statement: Does it explain why this matters?
     
     Be harsh but fair. Only 8+ if truly excellent.
+
+    Respond with JSON: {"quality_score": 1-10, "critique": "specific improvements or praise"}
   
   output:
     quality_score:

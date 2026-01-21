@@ -35,6 +35,8 @@ data:
 
     Provide a brief summary suitable for a technical report.
 
+    Respond with JSON: {"summary": "...", "key_insights": ["..."], "recommendations": ["..."]}
+
   output:
     summary:
       type: str

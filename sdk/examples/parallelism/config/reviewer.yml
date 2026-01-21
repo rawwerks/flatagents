@@ -6,7 +6,7 @@ data:
     name: gpt-4o-mini
     provider: openai
   system: "You are a {{ type }} reviewer. Review the provided document and give your assessment."
-  user: "Document: {{ document }}\n\nYour review as a {{ type }}:"
+  user: "Document: {{ document }}\n\nYour review as a {{ type }}:\n\nRespond with JSON: {\"score\": 1-10, \"feedback\": \"your detailed feedback\"}"
   output:
     score:
       type: int
