@@ -31,10 +31,5 @@ data:
     
     Write {{ input.user_name }}'s next response:
   
-  output:
-    response:
-      type: str
-      description: The user's response
-
 metadata:
   description: "LLM-driven user agent for automated chat"

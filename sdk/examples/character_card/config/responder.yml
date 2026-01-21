@@ -72,10 +72,5 @@ data:
 
     System: {{ input.post_history_instructions }}{% endif %}
   
-  output:
-    response:
-      type: str
-      description: The character's response to the user
-
 metadata:
   description: "SillyTavern-compatible character responder with user persona support"

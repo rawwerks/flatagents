@@ -67,7 +67,14 @@ data:
         user_persona: "{{ context.user_persona }}"
         no_system_prompt: "{{ context.no_system_prompt }}"
       output_to_context:
-        assistant_message: "{{ output.response }}"
+        assistant_message: |-
+          {%- if output.content is defined -%}
+          {{ output.content }}
+          {%- elif output.response is defined -%}
+          {{ output.response }}
+          {%- else -%}
+          {{ output }}
+          {%- endif -%}
       transitions:
         - to: update_history
     

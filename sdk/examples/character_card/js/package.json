@@ -1,0 +1,27 @@
+{
+  "name": "flatagents-character-card",
+  "version": "0.1.0",
+  "description": "Character card chat demo for FlatAgents.",
+  "type": "module",
+  "main": "src/character_card/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/character_card/main.ts",
+    "start": "node dist/character_card/main.js"
+  },
+  "dependencies": {
+    "flatagents": "file:../../../js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  },
+  "keywords": [
+    "flatagents",
+    "demo",
+    "character-card"
+  ],
+  "author": "",
+  "license": "MIT"
+}

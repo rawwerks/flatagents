@@ -160,7 +160,6 @@ data:
     process_chunks:
       foreach: "{{ context.sub_tasks }}"
       as: sub_task
-      key: "{{ sub_task.id }}"
       machine: chunk_processor
       mode: settled
       timeout: 300
@@ -170,7 +169,7 @@ data:
         context_content: "{{ context.context_content }}"
         total_length: "{{ context.context_length }}"
       output_to_context:
-        sub_task_results: "{{ output | dictsort | map(attribute='1') | list }}"
+        sub_task_results: "{{ output }}"
       transitions:
         - to: synthesize
 

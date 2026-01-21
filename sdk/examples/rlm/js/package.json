@@ -1,0 +1,27 @@
+{
+  "name": "flatagents-rlm",
+  "version": "0.1.0",
+  "description": "Recursive Language Model demo for FlatAgents.",
+  "type": "module",
+  "main": "src/rlm/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/rlm/main.ts",
+    "start": "node dist/rlm/main.js"
+  },
+  "dependencies": {
+    "flatagents": "file:../../../js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  },
+  "keywords": [
+    "flatagents",
+    "demo",
+    "rlm"
+  ],
+  "author": "",
+  "license": "MIT"
+}
