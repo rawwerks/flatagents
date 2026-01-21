@@ -20,17 +20,17 @@ echo "--- FlatAgent Peering Demo Runner ---"
 # Get the directory the script is located in
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Establish project root by walking up to find .git directory
+# Establish project root by walking up to find .git
 find_project_root() {
     local dir="$1"
     while [[ "$dir" != "/" ]]; do
-        if [[ -d "$dir/.git" ]]; then
+        if [[ -e "$dir/.git" ]]; then
             echo "$dir"
             return 0
         fi
         dir="$(dirname "$dir")"
     done
-    echo "Error: Could not find project root (no .git directory found)" >&2
+    echo "Error: Could not find project root (no .git found)" >&2
     return 1
 }
 

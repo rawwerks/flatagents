@@ -33,18 +33,18 @@ echo "--- RLM Demo Runner ---"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Establish project root by walking up to find .git directory
+# Establish project root by walking up to find .git
 # This ensures paths work regardless of where the script is invoked from
 find_project_root() {
     local dir="$1"
     while [[ "$dir" != "/" ]]; do
-        if [[ -d "$dir/.git" ]]; then
+        if [[ -e "$dir/.git" ]]; then
             echo "$dir"
             return 0
         fi
         dir="$(dirname "$dir")"
     done
-    echo "Error: Could not find project root (no .git directory found)" >&2
+    echo "Error: Could not find project root (no .git found)" >&2
     return 1
 }
 
