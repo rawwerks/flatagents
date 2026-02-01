@@ -225,6 +225,17 @@ export interface MachineHooks {
 
     /** Called for custom actions defined in state config. */
     onAction?(action: string, context: Record<string, any>): Record<string, any> | Promise<Record<string, any>>;
+
+    /**
+     * Called when an agent requests a tool call during tool_loop execution.
+     * Must return the tool result which will be sent back to the agent.
+     *
+     * @param toolName - Name of the tool to execute
+     * @param arguments - Arguments passed to the tool (parsed from JSON)
+     * @param context - Current machine context
+     * @returns Tool execution result (will be JSON serialized for the agent)
+     */
+    onToolCall?(toolName: string, arguments: Record<string, any>, context: Record<string, any>): any | Promise<any>;
 }
 
 export interface LLMBackend {

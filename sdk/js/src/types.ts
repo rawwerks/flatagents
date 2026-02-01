@@ -53,6 +53,20 @@ export interface ToolFunction {
 }
 
 /**
+ * Configuration for multi-round tool calling loops.
+ */
+export interface ToolLoopConfig {
+  /** Maximum number of tool call rounds (default: 10) */
+  max_rounds?: number;
+  /** Tool definitions (OpenAI function calling format) */
+  tools?: ToolDefinition[];
+  /** Control tool usage */
+  tool_choice?: ToolChoice;
+  /** Allow parallel tool calls in single response (default: true) */
+  parallel_tool_calls?: boolean;
+}
+
+/**
  * Model config that references a profile with optional overrides.
  */
 export interface ProfiledModelConfig extends Partial<ModelConfig> {
@@ -137,6 +151,8 @@ export interface State {
   output_to_context?: Record<string, any>;
   output?: Record<string, any>;
   transitions?: { condition?: string; to: string }[];
+  tool_loop?: boolean | ToolLoopConfig;
+  tools?: ToolDefinition[];
   on_error?: string | Record<string, string>;
   foreach?: string;
   as?: string;
@@ -145,7 +161,6 @@ export interface State {
   timeout?: number;
   launch?: string | string[];
   launch_input?: Record<string, any>;
-  tool_loop?: boolean;
   sampling?: "single" | "multi";
 }
 
