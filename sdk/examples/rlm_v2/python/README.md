@@ -5,7 +5,7 @@ A stripped-down RLM implementation aligned with Algorithm 1 from the RLM paper, 
 ## Key properties
 
 - Long context is stored in REPL variable `context` (not sent directly to root LM input)
-- Root LM iteratively emits ` ```repl ` code
+- Root LM iteratively emits fenced code blocks to execute in the REPL
 - REPL state is persistent across iterations
 - Only bounded execution metadata is fed back to root LM
 - Recursive `llm_query()` calls launch the same machine with incremented depth
@@ -72,6 +72,37 @@ Core event types in `events.jsonl`:
 - `--trace-dir <dir>` (default: `./traces`)
 - `--print-iterations` (live concise iteration/subcall progress)
 - `--experiment <name>` and repeated `--tag key=value`
+
+## Research corpus QA tooling
+
+A helper CLI is included for large local corpora (e.g., yearly arXiv markdown exports).
+For full dedicated docs, see `python/RESEARCH_QA_README.md`.
+
+For convenience, you can use `python/research.sh` presets (`index`, `basic`, `fast`, `compare`) for common runs.
+
+A quick overview:
+
+```bash
+# Build index (defaults to ~/code/analysis/ml_research_analysis_{2023,2024,2025})
+# By default, keeps full markdown body text (no truncation)
+rlm-v2-research index --db ./research_index.db
+
+# Ask a question in RLM-native mode (default): REPL gets a path+metadata manifest,
+# and the agent reads files on demand.
+rlm-v2-research ask --db ./research_index.db \
+  --question "What are the strongest findings about test-time scaling in 2025?" \
+  --mode native --inspect --print-iterations \
+  --save-verification ./artifacts/verification.json
+
+# Optional retrieval-prefilter mode (BM25 -> RLM)
+rlm-v2-research ask --db ./research_index.db \
+  --question "LoRA for vision" --mode retrieval --top-k 60
+
+# Preview selected docs only
+rlm-v2-research ask --db ./research_index.db --question "LoRA for vision" --dry-run
+```
+
+The ask command emits a deterministic verification payload (doc ids, file paths, quotes, confidence) so you can cheaply open and verify source papers.
 
 ## Testing
 

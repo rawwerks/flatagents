@@ -17,6 +17,7 @@ dev = [
 
 [project.scripts]
 rlm-v2-demo = "rlm_v2.main:main"
+rlm-v2-research = "rlm_v2.research_qa:main"
 
 [build-system]
 requires = ["hatchling"]

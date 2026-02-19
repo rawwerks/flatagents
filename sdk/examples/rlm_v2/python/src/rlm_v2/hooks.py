@@ -12,10 +12,10 @@ from typing import Any, Protocol
 from flatmachines import FlatMachine, MachineHooks, get_logger
 
 try:
-    from .repl import REPLRegistry, extract_repl_blocks, truncate_text
+    from .repl import REPLRegistry, extract_code_blocks, truncate_text
     from .trace import TraceRecorder, normalize_inspect_level
 except ImportError:  # pragma: no cover
-    from repl import REPLRegistry, extract_repl_blocks, truncate_text
+    from repl import REPLRegistry, extract_code_blocks, truncate_text
     from trace import TraceRecorder, normalize_inspect_level
 
 logger = get_logger(__name__)
@@ -464,7 +464,7 @@ class RLMV2Hooks(MachineHooks):
             response_preview=self._preview(context, raw_response, 400),
         )
 
-        code_blocks = extract_repl_blocks(raw_response)
+        code_blocks = extract_code_blocks(raw_response)
         self._trace_event(
             context,
             "code_blocks_extracted",

@@ -12,14 +12,17 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
 
-REPL_BLOCK_PATTERN = re.compile(r"```repl\s*\n(.*?)\n```", re.DOTALL)
+CODE_BLOCK_PATTERN = re.compile(
+    r"(?:^|\n)```(?:[A-Za-z0-9_+-]+)?[ \t]*\n(.*?)\n```(?=\n|$)",
+    re.DOTALL,
+)
 
 
-def extract_repl_blocks(text: str) -> list[str]:
-    """Extract ```repl code blocks from text in order."""
+def extract_code_blocks(text: str) -> list[str]:
+    """Extract fenced code blocks from text in order."""
     if not text:
         return []
-    return [m.group(1).strip() for m in REPL_BLOCK_PATTERN.finditer(text)]
+    return [m.group(1).strip() for m in CODE_BLOCK_PATTERN.finditer(text)]
 
 
 def truncate_text(value: Any, max_chars: int) -> str:
@@ -179,6 +182,6 @@ __all__ = [
     "REPLExecutionResult",
     "REPLRegistry",
     "REPLSession",
-    "extract_repl_blocks",
+    "extract_code_blocks",
     "truncate_text",
 ]

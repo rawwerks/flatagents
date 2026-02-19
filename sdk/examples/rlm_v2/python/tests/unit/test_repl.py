@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from rlm_v2.repl import REPLRegistry, extract_repl_blocks
+from rlm_v2.repl import REPLRegistry, extract_code_blocks
 
 
-def test_extract_repl_blocks_multiple() -> None:
+def test_extract_code_blocks_mixed_fences() -> None:
     text = """
 Before
 ```repl
@@ -11,16 +11,21 @@ x = 1
 print(x)
 ```
 Middle
-```repl
+```python
 y = x + 1
 print(y)
 ```
 After
+```
+z = y + 1
+print(z)
+```
 """
-    blocks = extract_repl_blocks(text)
-    assert len(blocks) == 2
+    blocks = extract_code_blocks(text)
+    assert len(blocks) == 3
     assert "x = 1" in blocks[0]
     assert "y = x + 1" in blocks[1]
+    assert "z = y + 1" in blocks[2]
 
 
 def test_repl_session_persistence_across_execs() -> None:

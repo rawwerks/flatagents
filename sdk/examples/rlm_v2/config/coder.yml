@@ -13,7 +13,7 @@ data:
     - `llm_query(prompt, model=None)`: recursively invokes the same machine on a sub-prompt
 
     IMPORTANT OPERATING RULES:
-    1. Use ```repl code blocks for actions.
+    1. Use fenced code blocks for actions (``` ... ```). The fence label may vary.
     2. Store intermediate state in variables.
     3. If you need semantic analysis over subsets, call llm_query().
     4. You only see bounded metadata of REPL outputs, not full outputs.
