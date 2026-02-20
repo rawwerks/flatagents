@@ -158,10 +158,15 @@ class FirestoreBackend:
         
         return sorted(keys)
     
-    async def list_execution_ids(self) -> list[str]:
+    async def list_execution_ids(self, *, event: str = None) -> list[str]:
         docs = self.db.collection(self.collection).stream()
         ids = []
         async for doc in docs:
+            if event is not None:
+                # Filter by loading latest checkpoint and checking event
+                data = doc.to_dict() or {}
+                if data.get("event") != event:
+                    continue
             ids.append(doc.id)
         return sorted(ids)
 

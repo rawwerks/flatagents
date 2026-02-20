@@ -48,8 +48,14 @@ class PersistenceBackend(ABC):
         pass
 
     @abstractmethod
-    async def list_execution_ids(self) -> List[str]:
-        """Return all execution IDs that have checkpoint data."""
+    async def list_execution_ids(self, *, event: Optional[str] = None) -> List[str]:
+        """Return execution IDs that have checkpoint data.
+
+        Args:
+            event: If provided, only return IDs whose latest checkpoint
+                   has this event value (e.g., "machine_end" for completed).
+                   If None, return all execution IDs.
+        """
         pass
 
     @abstractmethod
@@ -95,11 +101,30 @@ class LocalFileBackend(PersistenceBackend):
         path = self.base_dir / key
         path.unlink(missing_ok=True)
 
-    async def list_execution_ids(self) -> List[str]:
-        return sorted(
+    async def list_execution_ids(self, *, event: Optional[str] = None) -> List[str]:
+        all_ids = sorted(
             d.name for d in self.base_dir.iterdir()
             if d.is_dir() and not d.name.startswith(".")
         )
+        if event is None:
+            return all_ids
+        # Filter by loading the latest snapshot for each execution
+        matched = []
+        for eid in all_ids:
+            ptr_bytes = await self.load(f"{eid}/latest")
+            if not ptr_bytes:
+                continue
+            key = ptr_bytes.decode("utf-8")
+            data_bytes = await self.load(key)
+            if not data_bytes:
+                continue
+            try:
+                snapshot = json.loads(data_bytes.decode("utf-8"))
+                if isinstance(snapshot, dict) and snapshot.get("event") == event:
+                    matched.append(eid)
+            except Exception:
+                continue
+        return matched
 
     async def delete_execution(self, execution_id: str) -> None:
         self._validate_key(execution_id)
@@ -122,9 +147,27 @@ class MemoryBackend(PersistenceBackend):
     async def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
-    async def list_execution_ids(self) -> List[str]:
+    async def list_execution_ids(self, *, event: Optional[str] = None) -> List[str]:
         ids = {k.split("/", 1)[0] for k in self._store if "/" in k}
-        return sorted(ids)
+        all_ids = sorted(ids)
+        if event is None:
+            return all_ids
+        matched = []
+        for eid in all_ids:
+            ptr_bytes = await self.load(f"{eid}/latest")
+            if not ptr_bytes:
+                continue
+            key = ptr_bytes.decode("utf-8")
+            data_bytes = await self.load(key)
+            if not data_bytes:
+                continue
+            try:
+                snapshot = json.loads(data_bytes.decode("utf-8"))
+                if isinstance(snapshot, dict) and snapshot.get("event") == event:
+                    matched.append(eid)
+            except Exception:
+                continue
+        return matched
 
     async def delete_execution(self, execution_id: str) -> None:
         prefix = f"{execution_id}/"
@@ -245,6 +288,27 @@ class CheckpointManager:
             
         data = json.loads(data_bytes.decode('utf-8'))
         return MachineSnapshot(**data)
+
+    async def load_status(self) -> Optional[tuple]:
+        """Return (event, current_state) without deserializing full context.
+
+        For SQLite backends this reads indexed columns directly.
+        For other backends it falls back to loading the full snapshot.
+
+        Returns:
+            Tuple of (event, current_state), or None if no checkpoint exists.
+        """
+        ptr_bytes = await self.backend.load(self._latest_pointer_key())
+        if not ptr_bytes:
+            return None
+
+        key = ptr_bytes.decode('utf-8')
+        data_bytes = await self.backend.load(key)
+        if not data_bytes:
+            return None
+
+        data = json.loads(data_bytes.decode('utf-8'))
+        return (data.get("event"), data.get("current_state"))
 
 
 def _utc_now_iso() -> str:
@@ -412,11 +476,24 @@ class SQLiteCheckpointBackend(PersistenceBackend):
             )
             self._conn.commit()
 
-    async def list_execution_ids(self) -> List[str]:
+    async def list_execution_ids(self, *, event: Optional[str] = None) -> List[str]:
         async with self._op_lock:
-            rows = self._conn.execute(
-                "SELECT DISTINCT execution_id FROM machine_checkpoints ORDER BY execution_id"
-            ).fetchall()
+            if event is None:
+                rows = self._conn.execute(
+                    "SELECT DISTINCT execution_id FROM machine_checkpoints ORDER BY execution_id"
+                ).fetchall()
+            else:
+                # Join through latest pointer to get the current event for each execution
+                rows = self._conn.execute(
+                    """
+                    SELECT ml.execution_id
+                    FROM machine_latest ml
+                    JOIN machine_checkpoints mc ON mc.checkpoint_key = ml.latest_key
+                    WHERE mc.event = ?
+                    ORDER BY ml.execution_id
+                    """,
+                    (event,),
+                ).fetchall()
             return [r["execution_id"] for r in rows]
 
     async def delete_execution(self, execution_id: str) -> None:

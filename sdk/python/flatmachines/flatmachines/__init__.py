@@ -60,15 +60,17 @@ from .distributed import (
     WorkerRegistration,
     WorkerRecord,
     WorkerFilter,
-    WorkItem,
     RegistrationBackend,
+    MemoryRegistrationBackend,
+    SQLiteRegistrationBackend,
+    create_registration_backend,
+)
+from .work import (
+    WorkItem,
     WorkBackend,
     WorkPool,
-    MemoryRegistrationBackend,
     MemoryWorkBackend,
-    SQLiteRegistrationBackend,
     SQLiteWorkBackend,
-    create_registration_backend,
     create_work_backend,
 )
 from .distributed_hooks import DistributedWorkerHooks

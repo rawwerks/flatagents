@@ -717,6 +717,8 @@ class FlatMachine:
             config_dict=target_config,
             result_backend=self.result_backend,
             agent_registry=self.agent_registry,
+            persistence=self.persistence,
+            lock=self.lock,
             _config_dir=peer_config_dir,
             _execution_id=child_id,
             _parent_execution_id=self.execution_id,
