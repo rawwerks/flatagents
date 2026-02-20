@@ -23,6 +23,18 @@ def _config_path() -> Path:
     return Path(__file__).resolve().parents[3] / "config" / "machine.yml"
 
 
+def _leaf_prompt_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "config" / "PROMPT.md"
+
+
+def _load_leaf_system_prompt() -> str:
+    """Load leaf system prompt from PROMPT.md (same as root, minus llm_query)."""
+    path = _leaf_prompt_path()
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -92,7 +104,7 @@ async def run_rlm_v2(
     current_depth: int = 0,
     max_depth: int = 5,
     timeout_seconds: int = 300,
-    max_iterations: int = 20,
+    max_iterations: int = 30,
     max_steps: int = 80,
     sub_model_profile: str | None = None,
     model_override: str | None = None,
@@ -137,6 +149,8 @@ async def run_rlm_v2(
 
     machine = FlatMachine(config_file=str(config_path))
 
+    leaf_system_prompt = _load_leaf_system_prompt()
+
     input_payload: dict[str, Any] = {
         "task": task,
         "long_context": long_context,
@@ -156,6 +170,7 @@ async def run_rlm_v2(
         "print_iterations": print_iterations,
         "experiment": experiment,
         "tags": tags,
+        "leaf_system_prompt": leaf_system_prompt,
     }
 
     logger.info(
@@ -194,7 +209,7 @@ async def run_from_file(
     task: str,
     max_depth: int = 5,
     timeout_seconds: int = 300,
-    max_iterations: int = 20,
+    max_iterations: int = 30,
     max_steps: int = 80,
     sub_model_profile: str | None = None,
     model_override: str | None = None,
@@ -276,7 +291,7 @@ def demo(
             long_context=context,
             max_depth=5,
             timeout_seconds=300,
-            max_iterations=20,
+            max_iterations=30,
             max_steps=80,
             inspect=inspect,
             inspect_level=inspect_level,

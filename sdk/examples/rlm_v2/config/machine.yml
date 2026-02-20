@@ -15,7 +15,7 @@ data:
     current_depth: input.current_depth
     max_depth: input.max_depth
     timeout_seconds: input.timeout_seconds
-    max_iterations: input.max_iterations
+    max_iterations: input.max_iterations  # paper ref default: 30
     max_steps: input.max_steps
 
     machine_config_path: input.machine_config_path
@@ -31,12 +31,15 @@ data:
     experiment: input.experiment
     tags: input.tags
 
+    leaf_system_prompt: input.leaf_system_prompt
+
     session_id: null
     context_length: 0
     context_prefix: ""
 
     iteration: 0
     raw_response: null
+    messages: []
 
     last_exec_metadata: {}
     history_meta: []
@@ -51,7 +54,7 @@ data:
     is_final: false
 
   agents:
-    coder: ./coder.yml
+    root: ./root.yml
 
   states:
     start:
@@ -62,12 +65,13 @@ data:
         - to: generate_code
 
     generate_code:
-      agent: coder
+      agent: root
       execution:
         type: retry
         backoffs: [2, 8, 16]
         jitter: 0.1
       input:
+        messages: context.messages
         task: context.task
         context_length: context.context_length
         context_prefix: context.context_prefix
@@ -132,5 +136,5 @@ data:
     class: "RLMV2Hooks"
 
 metadata:
-  description: "RLM v2 minimal recursive loop"
+  description: "RLM v2 recursive loop"
   tags: ["rlm", "recursive", "repl"]

@@ -1,0 +1,16 @@
+spec: flatagent
+spec_version: "1.0.0"
+
+data:
+  name: rlm-v2-leaf
+  model: subcall
+
+  system: |
+    {{ input.leaf_system_prompt }}
+
+  user: |
+    {{ input.prompt }}
+
+metadata:
+  description: "Leaf LM agent for RLM v2 sub-calls at max depth"
+  tags: ["rlm", "leaf"]

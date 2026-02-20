@@ -58,6 +58,9 @@ Tracing:
     --inspect --inspect-level summary --trace-dir ./traces --print-iterations
   Override with explicit ask args (e.g. --inspect-level full, --trace-dir /tmp/traces).
 
+Depth:
+  ask/basic/fast/compare default to --max-depth 1 unless you explicitly pass --max-depth.
+
 Examples:
   ./research.sh index --root ~/code/analysis/ml_research_analysis_2025
   ./research.sh basic -q "What are the strongest 2025 long-context results?"
@@ -236,6 +239,11 @@ if ! arg_in_passthrough "--print-iterations"; then
     TRACE_ARGS+=(--print-iterations)
 fi
 
+DEPTH_ARGS=()
+if ! arg_in_passthrough "--max-depth"; then
+    DEPTH_ARGS+=(--max-depth 1)
+fi
+
 timestamp="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$ARTIFACT_DIR"
 
@@ -247,7 +255,7 @@ case "$COMMAND" in
 
     ask)
         echo "❓ Running raw ask (tracing enabled)..."
-        run_research_qa ask --db "$DB_PATH" "${TRACE_ARGS[@]}" "${maybe_question_args[@]}" "${PASSTHROUGH_ARGS[@]}"
+        run_research_qa ask --db "$DB_PATH" "${TRACE_ARGS[@]}" "${DEPTH_ARGS[@]}" "${maybe_question_args[@]}" "${PASSTHROUGH_ARGS[@]}"
         ;;
 
     basic)
@@ -260,7 +268,7 @@ case "$COMMAND" in
             --db "$DB_PATH" \
             --mode native \
             "${TRACE_ARGS[@]}" \
-            --max-depth 5 \
+            "${DEPTH_ARGS[@]}" \
             --timeout-seconds 300 \
             --max-iterations 20 \
             --max-steps 80 \
@@ -283,9 +291,9 @@ case "$COMMAND" in
             --db "$DB_PATH" \
             --mode retrieval \
             "${TRACE_ARGS[@]}" \
+            "${DEPTH_ARGS[@]}" \
             --top-k 40 \
             --max-docs 30 \
-            --max-depth 3 \
             --timeout-seconds 180 \
             --max-iterations 10 \
             --max-steps 40 \
@@ -311,7 +319,7 @@ case "$COMMAND" in
             --db "$DB_PATH" \
             --mode native \
             "${TRACE_ARGS[@]}" \
-            --max-depth 5 \
+            "${DEPTH_ARGS[@]}" \
             --timeout-seconds 300 \
             --max-iterations 20 \
             --max-steps 80 \
@@ -325,8 +333,8 @@ case "$COMMAND" in
             --db "$DB_PATH" \
             --mode retrieval \
             "${TRACE_ARGS[@]}" \
+            "${DEPTH_ARGS[@]}" \
             --top-k 60 \
-            --max-depth 4 \
             --timeout-seconds 240 \
             --max-iterations 14 \
             --max-steps 60 \

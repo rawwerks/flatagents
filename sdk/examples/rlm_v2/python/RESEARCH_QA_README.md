@@ -77,6 +77,18 @@ Use `python/research.sh` for common runs with presets:
 ./research.sh <index|basic|fast|compare|ask> [options]
 ```
 
+Live status monitor:
+
+```bash
+# one-shot status
+./watch_research_status.sh
+
+# live refresh with watch
+watch -n 2 ./watch_research_status.sh
+# or
+./watch_research_status.sh --watch --interval 2
+```
+
 Examples:
 
 ```bash

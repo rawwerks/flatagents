@@ -134,7 +134,8 @@ print(context)
 
 
 
-def test_recursion_invoker_depth_limit() -> None:
+def test_recursion_invoker_at_max_depth_calls_leaf() -> None:
+    """At max depth, sub-calls go to the leaf LM agent (not recursive machine)."""
     invoker = RecursionInvoker()
     response = invoker.invoke(
         prompt="hello",
@@ -148,7 +149,9 @@ def test_recursion_invoker_depth_limit() -> None:
         },
     )
 
-    assert response == "SUBCALL_DEPTH_LIMIT"
+    # Leaf agent returns a real LM response, not a sentinel
+    assert isinstance(response, str)
+    assert response not in ("SUBCALL_DEPTH_LIMIT", "SUBCALL_NO_ANSWER", "")
 
 
 def test_recursion_invoker_missing_config() -> None:

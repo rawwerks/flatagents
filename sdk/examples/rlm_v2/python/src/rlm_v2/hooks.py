@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from pathlib import Path
 from typing import Any, Protocol
 
+from flatagents import FlatAgent
 from flatmachines import FlatMachine, MachineHooks, get_logger
 
 try:
@@ -136,11 +137,62 @@ class RecursionInvoker:
             emit("subcall_end", status="config_not_found", duration_ms=duration_ms)
             return "SUBCALL_CONFIG_NOT_FOUND"
 
-        if next_depth > max_depth:
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            emit("subcall_end", status="depth_limit", duration_ms=duration_ms)
-            return "SUBCALL_DEPTH_LIMIT"
+        leaf_agent_path = Path(str(machine_config_path)).with_name("leaf.yml")
 
+        # At max depth: sub-calls are leaf LM calls (no REPL, no recursion).
+        # The leaf gets the sub_prompt as user message and leaf_system_prompt as system.
+        if next_depth >= max_depth:
+            if not leaf_agent_path.exists():
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                emit("subcall_end", status="leaf_config_not_found", duration_ms=duration_ms)
+                return "SUBCALL_LEAF_CONFIG_NOT_FOUND"
+
+            leaf_system_prompt = parent_context.get("leaf_system_prompt") or ""
+
+            def _run_leaf() -> str:
+                agent = FlatAgent(config_file=str(leaf_agent_path))
+                response = agent.call_sync(
+                    leaf_system_prompt=leaf_system_prompt,
+                    prompt=sub_prompt,
+                )
+                if response.content is None:
+                    return "SUBCALL_NO_ANSWER"
+                return str(response.content)
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(_run_leaf)
+                    answer = future.result(timeout=timeout_seconds)
+
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                emit(
+                    "subcall_end",
+                    status="success",
+                    mode="leaf_lm",
+                    duration_ms=duration_ms,
+                    answer_length=len(answer),
+                    answer_preview=self._preview(answer, inspect_level),
+                )
+                return answer
+            except FuturesTimeoutError:
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.warning("Leaf subcall timed out at depth=%s", next_depth)
+                emit("subcall_end", status="timeout", mode="leaf_lm", duration_ms=duration_ms)
+                return "SUBCALL_TIMEOUT"
+            except Exception as exc:
+                duration_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.warning("Leaf subcall error at depth=%s: %s", next_depth, exc)
+                emit(
+                    "subcall_end",
+                    status="error",
+                    mode="leaf_lm",
+                    duration_ms=duration_ms,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                return f"SUBCALL_ERROR: {type(exc).__name__}: {exc}"
+
+        # Below max depth: recursive machine invocation (full REPL loop).
         sub_input: dict[str, Any] = {
             "task": "Answer the request encoded in REPL variable context. Set Final when complete.",
             "long_context": sub_prompt,
@@ -160,6 +212,7 @@ class RecursionInvoker:
             "print_iterations": self._as_bool(parent_context.get("print_iterations"), False),
             "experiment": parent_context.get("experiment"),
             "tags": parent_context.get("tags"),
+            "leaf_system_prompt": parent_context.get("leaf_system_prompt") or "",
         }
 
         if model is not None:
@@ -182,6 +235,7 @@ class RecursionInvoker:
             emit(
                 "subcall_end",
                 status="success",
+                mode="recursive_machine",
                 duration_ms=duration_ms,
                 answer_length=len(answer),
                 answer_preview=self._preview(answer, inspect_level),
@@ -190,7 +244,7 @@ class RecursionInvoker:
         except FuturesTimeoutError:
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             logger.warning("Subcall timed out at depth=%s", next_depth)
-            emit("subcall_end", status="timeout", duration_ms=duration_ms)
+            emit("subcall_end", status="timeout", mode="recursive_machine", duration_ms=duration_ms)
             return "SUBCALL_TIMEOUT"
         except Exception as exc:
             duration_ms = (time.perf_counter() - start_time) * 1000.0
@@ -198,6 +252,7 @@ class RecursionInvoker:
             emit(
                 "subcall_end",
                 status="error",
+                mode="recursive_machine",
                 duration_ms=duration_ms,
                 error_type=type(exc).__name__,
                 error_message=str(exc),
@@ -345,6 +400,12 @@ class RLMV2Hooks(MachineHooks):
             context["best_partial"] = "No answer produced"
 
         context["iteration"] = self._coerce_int(context.get("iteration"), 0, min_value=0)
+
+        # Algorithm 1: hist ← [Metadata(state)]
+        messages = context.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+        context["messages"] = messages
 
         context["inspect"] = self._coerce_bool(context.get("inspect"), False)
         context["inspect_level"] = normalize_inspect_level(str(context.get("inspect_level") or "summary"))
@@ -567,6 +628,28 @@ class RLMV2Hooks(MachineHooks):
         context["last_exec_metadata"] = meta_entry
 
         self._update_best_partial(context, session, stdout_text)
+
+        # Algorithm 1: hist ← hist ∥ code ∥ Metadata(stdout)
+        # Append assistant response (code) and REPL output to conversation history.
+        messages = context.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+
+        messages.append({"role": "assistant", "content": raw_response})
+
+        # Build REPL output metadata message (what the model sees back)
+        repl_parts: list[str] = []
+        if stdout_text:
+            repl_parts.append(f"[REPL stdout]\n{stdout_text}")
+        if stderr_text:
+            repl_parts.append(f"[REPL stderr]\n{stderr_text}")
+        if changed_vars:
+            repl_parts.append(f"[Changed variables: {', '.join(sorted(changed_vars))}]")
+        if not repl_parts:
+            repl_parts.append("[REPL: no output]")
+
+        messages.append({"role": "user", "content": "\n".join(repl_parts)})
+        context["messages"] = messages
 
         final_exists = session.has_variable("Final") and session.get_variable("Final") is not None
         if context.get("print_iterations"):
