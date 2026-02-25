@@ -213,6 +213,40 @@ export interface AgentResult {
     provider_data?: ProviderData | null;
 }
 
+/**
+ * Result from a completed tool loop.
+ */
+export interface ToolLoopResult extends AgentResult {
+    /** Full message chain from the loop */
+    messages: Message[];
+
+    /** Total tool executions across all turns */
+    tool_calls_count: number;
+
+    /** Total LLM turns */
+    turns: number;
+
+    /** Known values: "complete", "max_tool_calls", "max_turns", "timeout", "cost_limit", "aborted", "error" */
+    stop_reason: string;
+}
+
+export interface ToolExecutionResult {
+    content: string;
+    is_error?: boolean;
+}
+
+export interface ToolExecutor {
+    execute(
+        tool_call_id: string,
+        name: string,
+        arguments: Record<string, any>,
+    ): Promise<ToolExecutionResult>;
+}
+
+export interface SteeringProvider {
+    getMessages(): Promise<Message[]>;
+}
+
 export interface UsageInfo {
     input_tokens?: number;
     output_tokens?: number;

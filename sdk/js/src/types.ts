@@ -69,6 +69,8 @@ export interface AgentConfig {
     instruction_suffix?: string;
     output?: Record<string, { type: string; description?: string; enum?: string[]; required?: boolean; items?: any; properties?: any }>;
     mcp?: { servers: Record<string, MCPServer>; tool_filter?: ToolFilter; tool_prompt?: string };
+    tools?: ToolDefinition[];
+    tool_loop?: ToolLoopConfig;
   };
 }
 
@@ -147,6 +149,25 @@ export interface MCPServer {
 export interface ToolFilter {
   allow?: string[];
   deny?: string[];
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, any>;
+  };
+}
+
+export interface ToolLoopConfig {
+  max_tool_calls?: number;
+  max_turns?: number;
+  allowed_tools?: string[];
+  denied_tools?: string[];
+  tool_timeout?: number;
+  total_timeout?: number;
+  max_cost?: number;
 }
 
 export interface ExecutionConfig {

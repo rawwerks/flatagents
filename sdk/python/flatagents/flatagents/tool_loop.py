@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, runtime_checkable
+
+from .baseagent import FinishReason
 
 
 class StopReason(str, Enum):
@@ -160,6 +162,21 @@ def _serialize_arguments(arguments: Any) -> str:
     return json.dumps(arguments)
 
 
+def _map_finish_reason(reason: Optional[FinishReason]) -> tuple[StopReason, Optional[str]]:
+    """Map agent finish reason to tool-loop stop reason and optional error text."""
+    if reason is None or reason == FinishReason.STOP:
+        return StopReason.COMPLETE, None
+    if reason == FinishReason.ABORTED:
+        return StopReason.ABORTED, "agent aborted"
+    if reason == FinishReason.LENGTH:
+        return StopReason.ERROR, "model stopped due to max token length"
+    if reason == FinishReason.CONTENT_FILTER:
+        return StopReason.ERROR, "model output blocked by content filter"
+    if reason == FinishReason.ERROR:
+        return StopReason.ERROR, "agent returned error finish reason"
+    return StopReason.ERROR, f"unexpected finish reason: {reason}"
+
+
 class ToolLoopAgent:
     """
     Runs the LLM tool-call loop.
@@ -198,6 +215,7 @@ class ToolLoopAgent:
         turns = 0
         start_time = time.monotonic()
         last_content: Optional[str] = None
+        initial_user_prompt: Optional[str] = None
 
         while True:
             # Check total timeout
@@ -233,6 +251,7 @@ class ToolLoopAgent:
                     tools=self._llm_tools,
                     **input_data,
                 )
+                initial_user_prompt = getattr(response, "rendered_user_prompt", None)
             else:
                 # Subsequent turns: pass chain only (no input_data re-rendering)
                 response = await self._agent.call(
@@ -252,18 +271,35 @@ class ToolLoopAgent:
                     error=response.error.message,
                 )
 
+            # Seed chain with initial rendered user prompt once.
+            if turns == 1 and initial_user_prompt:
+                chain.append({"role": "user", "content": initial_user_prompt})
+
             # Build assistant message and add to chain
             assistant_msg = _build_assistant_message(response)
             chain.append(assistant_msg)
             last_content = response.content
 
-            # Check finish reason
-            from .baseagent import FinishReason
-            if response.finish_reason != FinishReason.TOOL_USE:
+            # If this turn pushed us over budget, stop before any tool side-effects.
+            if (
+                response.finish_reason == FinishReason.TOOL_USE
+                and guardrails.max_cost is not None
+                and usage.total_cost >= guardrails.max_cost
+            ):
                 return ToolLoopResult(
                     content=last_content, messages=chain,
                     tool_calls_count=tool_calls_count, turns=turns,
-                    stop_reason=StopReason.COMPLETE, usage=usage,
+                    stop_reason=StopReason.COST_LIMIT, usage=usage,
+                )
+
+            # Check finish reason
+            if response.finish_reason != FinishReason.TOOL_USE:
+                stop_reason, finish_error = _map_finish_reason(response.finish_reason)
+                return ToolLoopResult(
+                    content=last_content, messages=chain,
+                    tool_calls_count=tool_calls_count, turns=turns,
+                    stop_reason=stop_reason, usage=usage,
+                    error=finish_error,
                 )
 
             # We have tool calls — check guardrails before executing
@@ -283,7 +319,22 @@ class ToolLoopAgent:
 
             # Check steering
             if self._steering is not None:
-                steering_messages = await self._steering.get_messages()
+                try:
+                    steering_messages = await self._steering.get_messages()
+                except asyncio.CancelledError:
+                    return ToolLoopResult(
+                        content=last_content, messages=chain,
+                        tool_calls_count=tool_calls_count, turns=turns,
+                        stop_reason=StopReason.ABORTED, usage=usage,
+                        error="steering cancelled",
+                    )
+                except Exception as e:
+                    return ToolLoopResult(
+                        content=last_content, messages=chain,
+                        tool_calls_count=tool_calls_count, turns=turns,
+                        stop_reason=StopReason.ERROR, usage=usage,
+                        error=f"steering provider failed: {e}",
+                    )
                 for msg in steering_messages:
                     chain.append(msg)
 

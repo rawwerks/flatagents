@@ -677,6 +677,7 @@ class AgentResponse:
         rate_limit: Rate limit info from response headers
         finish_reason: Why the LLM stopped generating
         error: Error information if call failed (None on success)
+        rendered_user_prompt: Rendered user prompt used for this call
     """
     content: Optional[str] = None
     output: Optional[Dict[str, Any]] = None
@@ -686,6 +687,7 @@ class AgentResponse:
     rate_limit: Optional[RateLimitInfo] = None
     finish_reason: Optional[FinishReason] = None
     error: Optional[ErrorInfo] = None
+    rendered_user_prompt: Optional[str] = None
     
     @property
     def success(self) -> bool:

@@ -851,6 +851,7 @@ class FlatAgent:
                     rate_limit=rate_limit_info,
                     finish_reason=FinishReason.ERROR,
                     raw_response=getattr(e, 'response', None),
+                    rendered_user_prompt=user_prompt,
                 )
 
         # Track usage
@@ -900,6 +901,7 @@ class FlatAgent:
             usage=usage_info,
             rate_limit=rate_limit_info,
             finish_reason=finish_reason,
+            rendered_user_prompt=user_prompt,
         )
     
     def _extract_cache_tokens(self, usage: Any) -> tuple[int, int]:

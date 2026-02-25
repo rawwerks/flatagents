@@ -36,6 +36,7 @@ def make_response(
     finish_reason: FinishReason = FinishReason.STOP,
     error: Optional[ErrorInfo] = None,
     usage: Optional[UsageInfo] = None,
+    rendered_user_prompt: Optional[str] = None,
 ) -> AgentResponse:
     """Build a mock AgentResponse."""
     return AgentResponse(
@@ -44,6 +45,7 @@ def make_response(
         finish_reason=finish_reason,
         error=error,
         usage=usage,
+        rendered_user_prompt=rendered_user_prompt,
     )
 
 
@@ -402,15 +404,26 @@ class TestToolLoopErrors:
         assert result.error == "Too many requests"
 
     async def test_length_finish_reason(self):
-        """LLM hits max tokens — loop stops cleanly."""
+        """LLM hits max tokens — loop returns an error stop reason."""
         responses = [make_response(content="partial...", finish_reason=FinishReason.LENGTH)]
         agent = make_mock_agent(responses)
         loop = ToolLoopAgent(agent, tools=[make_echo_tool()])
 
         result = await loop.run(task="long output")
 
-        assert result.stop_reason == StopReason.COMPLETE
+        assert result.stop_reason == StopReason.ERROR
+        assert "length" in (result.error or "").lower()
         assert result.content == "partial..."
+
+    async def test_aborted_finish_reason(self):
+        """Agent aborted finish reason maps to ABORTED."""
+        responses = [make_response(content="partial", finish_reason=FinishReason.ABORTED)]
+        agent = make_mock_agent(responses)
+        loop = ToolLoopAgent(agent, tools=[make_echo_tool()])
+
+        result = await loop.run(task="abort")
+
+        assert result.stop_reason == StopReason.ABORTED
 
 
 class TestToolLoopSteering:
@@ -457,6 +470,39 @@ class TestToolLoopSteering:
 
         assert result.stop_reason == StopReason.COMPLETE
         assert result.turns == 2
+
+    async def test_steering_exception_returns_error(self):
+        """Steering callback errors are returned as structured ERROR stop."""
+        async def steering():
+            raise RuntimeError("queue offline")
+
+        tc = make_tool_call("c1", "echo", {"text": "x"})
+        agent = make_mock_agent([
+            make_response(content="", tool_calls=[tc], finish_reason=FinishReason.TOOL_USE),
+            make_response(content="done"),
+        ])
+        loop = ToolLoopAgent(agent, tools=[make_echo_tool()], steering=steering)
+
+        result = await loop.run(task="x")
+
+        assert result.stop_reason == StopReason.ERROR
+        assert "queue offline" in (result.error or "")
+
+    async def test_steering_cancelled_returns_aborted(self):
+        """Steering callback cancellation maps to ABORTED stop reason."""
+        async def steering():
+            raise asyncio.CancelledError()
+
+        tc = make_tool_call("c1", "echo", {"text": "x"})
+        agent = make_mock_agent([
+            make_response(content="", tool_calls=[tc], finish_reason=FinishReason.TOOL_USE),
+            make_response(content="done"),
+        ])
+        loop = ToolLoopAgent(agent, tools=[make_echo_tool()], steering=steering)
+
+        result = await loop.run(task="x")
+
+        assert result.stop_reason == StopReason.ABORTED
 
 
 class TestToolLoopUsage:
@@ -505,6 +551,8 @@ class TestToolLoopUsage:
         # After first turn: cost=0.10, second turn: cost=0.20 > 0.15
         assert result.stop_reason == StopReason.COST_LIMIT
         assert result.turns == 2
+        # Should stop before executing second round's tool batch
+        assert result.tool_calls_count == 1
 
 
 class TestToolLoopAgentCallArgs:
@@ -537,7 +585,12 @@ class TestToolLoopAgentCallArgs:
             return responses.pop(0)
 
         responses = [
-            make_response(content="", tool_calls=[tc], finish_reason=FinishReason.TOOL_USE),
+            make_response(
+                content="",
+                tool_calls=[tc],
+                finish_reason=FinishReason.TOOL_USE,
+                rendered_user_prompt="task: test",
+            ),
             make_response(content="done"),
         ]
         agent = AsyncMock()
@@ -549,9 +602,10 @@ class TestToolLoopAgentCallArgs:
         # First call has messages=None (or empty), second has the chain
         assert len(chain_snapshots) == 1  # only second call has messages
         second_chain = chain_snapshots[0]
-        assert len(second_chain) == 2
-        assert second_chain[0]["role"] == "assistant"
-        assert second_chain[1]["role"] == "tool"
+        assert len(second_chain) == 3
+        assert second_chain[0]["role"] == "user"
+        assert second_chain[1]["role"] == "assistant"
+        assert second_chain[2]["role"] == "tool"
 
     async def test_tools_passed_to_every_call(self):
         """Tools are passed to FlatAgent.call() on every turn."""

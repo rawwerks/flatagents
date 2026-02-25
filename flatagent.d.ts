@@ -166,6 +166,8 @@ export interface AgentData {
   instruction_suffix?: string;
   output?: OutputSchema;
   mcp?: MCPConfig;
+  tools?: ToolDefinition[];
+  tool_loop?: ToolLoopConfig;
 }
 
 export interface MCPConfig {
@@ -186,6 +188,25 @@ export interface MCPServerDef {
 export interface ToolFilter {
   allow?: string[];
   deny?: string[];
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, any>;
+  };
+}
+
+export interface ToolLoopConfig {
+  max_tool_calls?: number;
+  max_turns?: number;
+  allowed_tools?: string[];
+  denied_tools?: string[];
+  tool_timeout?: number;
+  total_timeout?: number;
+  max_cost?: number;
 }
 
 export interface ModelConfig {

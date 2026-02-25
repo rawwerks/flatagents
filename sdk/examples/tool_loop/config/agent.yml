@@ -1,0 +1,24 @@
+# FlatAgent Tool Loop Configuration
+# An assistant that can look up weather and time using tool calls
+
+spec: flatagent
+spec_version: "1.1.1"
+
+data:
+  name: tool-loop-assistant
+
+  model:
+    profile: "fast-cheap"
+
+  system: >
+    You are a helpful assistant with access to tools.
+    Use the provided tools to answer the user's question.
+    Always call the relevant tools before answering — do not guess.
+    After receiving tool results, provide a concise natural-language answer.
+
+  user: |
+    {{ input.question }}
+
+metadata:
+  description: "Tool-calling assistant that looks up weather and time"
+  tags: ["demo", "tool-loop", "tool-use"]

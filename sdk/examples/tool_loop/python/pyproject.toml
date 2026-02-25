@@ -1,0 +1,16 @@
+[project]
+name = "flatagent_tool_loop"
+version = "0.1.0"
+description = "Tool-calling demo for ToolLoopAgent."
+dependencies = ["flatagents[litellm,metrics]"]
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project.scripts]
+tool-loop-demo = "flatagent_tool_loop.main:main"

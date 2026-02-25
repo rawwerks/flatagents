@@ -1,0 +1,15 @@
+spec: flatprofiles
+spec_version: "1.1.1"
+
+data:
+  model_profiles:
+    fast-cheap:
+      provider: openrouter/anthropic
+      name: claude-haiku-4.5
+      temperature: 0.6
+      max_tokens: 1024
+
+  default: fast-cheap
+
+metadata:
+  description: "Model profiles for the tool_loop example"
