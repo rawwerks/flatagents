@@ -648,6 +648,7 @@ class FlatAgent:
         self,
         tool_provider: Optional["MCPToolProvider"] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         **input_data
     ) -> "AgentResponse":
         """
@@ -656,6 +657,9 @@ class FlatAgent:
         Args:
             tool_provider: Optional MCPToolProvider (overrides constructor value)
             messages: Optional conversation history (for tool call continuations)
+            tools: Optional list of tool dicts in OpenAI function-calling format.
+                   When provided, these are passed directly to the LLM instead of
+                   discovering tools via MCP.
             **input_data: Input values available as {{ input.* }} in templates
 
         Returns:
@@ -666,13 +670,21 @@ class FlatAgent:
             self._tool_provider = tool_provider
             self._tools_cache = None  # Clear cache
 
-        # Discover tools if MCP is configured
-        tools = self._discover_tools()
-        tools_prompt = self._render_tool_prompt(tools)
+        # Use caller-provided tools or discover via MCP
+        if tools is not None:
+            # Caller provided tools directly — skip MCP discovery
+            _external_tools = tools
+            _mcp_tools: list = []
+            tools_prompt = ""
+        else:
+            # Discover tools if MCP is configured
+            _mcp_tools = self._discover_tools()
+            _external_tools = None
+            tools_prompt = self._render_tool_prompt(_mcp_tools)
 
         # Render prompts
-        system_prompt = self._render_system_prompt(input_data, tools_prompt=tools_prompt, tools=tools)
-        user_prompt = self._render_user_prompt(input_data, tools_prompt=tools_prompt, tools=tools)
+        system_prompt = self._render_system_prompt(input_data, tools_prompt=tools_prompt, tools=_mcp_tools)
+        user_prompt = self._render_user_prompt(input_data, tools_prompt=tools_prompt, tools=_mcp_tools)
 
         # Build messages
         if messages:
@@ -727,11 +739,15 @@ class FlatAgent:
                 params[key] = value
 
         # Add tools if available
-        if tools:
-            params["tools"] = self._convert_tools_for_llm(tools)
+        if _external_tools:
+            # Caller provided tools in OpenAI format — use directly
+            params["tools"] = _external_tools
+        elif _mcp_tools:
+            params["tools"] = self._convert_tools_for_llm(_mcp_tools)
 
         # Use JSON mode if we have an output schema and no tools
-        if self.output_schema and not tools:
+        has_tools = bool(_external_tools or _mcp_tools)
+        if self.output_schema and not has_tools:
             params["response_format"] = {"type": "json_object"}
 
         # Call LLM via selected backend with metrics tracking
@@ -848,7 +864,7 @@ class FlatAgent:
 
         # Parse output schema if applicable
         output = None
-        if self.output_schema and content and not tools:
+        if self.output_schema and content and not has_tools:
             try:
                 # Strip markdown fences - LLMs sometimes wrap JSON in ```json blocks
                 output = json.loads(strip_markdown_json(content))
@@ -862,7 +878,7 @@ class FlatAgent:
             tool_calls = []
             for tc in message.tool_calls:
                 tool_name = tc.function.name
-                server = self._find_tool_server(tool_name, tools)
+                server = self._find_tool_server(tool_name, _mcp_tools)
 
                 try:
                     arguments = json.loads(tc.function.arguments)
@@ -1013,8 +1029,9 @@ class FlatAgent:
         self,
         tool_provider: Optional["MCPToolProvider"] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         **input_data
     ) -> "AgentResponse":
         """Synchronous wrapper for call()."""
         import asyncio
-        return asyncio.run(self.call(tool_provider=tool_provider, messages=messages, **input_data))
+        return asyncio.run(self.call(tool_provider=tool_provider, messages=messages, tools=tools, **input_data))
