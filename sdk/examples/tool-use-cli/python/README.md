@@ -1,6 +1,6 @@
 # Tool Use CLI Example
 
-A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the same defaults as pi-mono. Includes human-in-the-loop review after each agent run. Demonstrates both FlatMachine (orchestrated) and standalone ToolLoopAgent modes.
+A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the same defaults as pi-mono. Includes human-in-the-loop review after each agent run.
 
 ## Tools
 
@@ -11,7 +11,39 @@ A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the 
 | `write` | Write/create files with automatic parent directory creation |
 | `edit` | Surgical find-and-replace (exact match, single occurrence) |
 
-## Flow
+## Usage
+
+```bash
+cd sdk/examples/tool-use-cli/python
+
+# Default: interactive REPL
+./run.sh --local
+
+# Single-shot mode (-p / --print)
+./run.sh --local -p "list all Python files in this repo"
+
+# Standalone mode (ToolLoopAgent, no machine, no human review)
+./run.sh --local --standalone "what files are in the current directory?"
+
+# Custom working directory
+./run.sh --local -w /tmp/project -p "create a hello world Python script"
+```
+
+## Modes
+
+### REPL (default)
+
+Interactive loop. Type a task, agent executes with tool loop, pauses for human review. Approve or give feedback. Repeat.
+
+### Single-shot (`-p "task"`)
+
+Run one task, human review, exit. Useful for pipes.
+
+### Standalone (`--standalone "task"`)
+
+Uses `ToolLoopAgent` directly. No machine, no human review. Runs to completion and exits.
+
+## Flow (machine mode)
 
 ```
 ┌─────────────────┐
@@ -35,42 +67,6 @@ A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the 
 └─────────────────┘
 ```
 
-## Usage
-
-```bash
-cd sdk/examples/tool-use-cli/python
-
-# Via run.sh (sets up venv, installs deps)
-./run.sh --local "list all Python files in this repo"
-
-# Or directly (if deps are installed)
-python -m tool_use_cli.main "read README.md and summarize it"
-
-# Standalone mode (ToolLoopAgent, no machine, no human review)
-python -m tool_use_cli.main --standalone "what files are in the current directory?"
-
-# Custom working directory
-python -m tool_use_cli.main --working-dir /tmp/project "create a hello world Python script"
-```
-
-## Modes
-
-### Machine Mode (default)
-
-Uses `FlatMachine` with a `tool_loop` state + human review loop. Gets you:
-- Per-tool-call hooks (`on_tool_calls`, `on_tool_result`)
-- Checkpointing after every tool call
-- Human-in-the-loop approval after each agent run
-- Feedback loop — reject with feedback and the agent tries again
-- File modification tracking via hooks
-
-### Standalone Mode (`--standalone`)
-
-Uses `ToolLoopAgent` directly. No machine, no human review. Gets you:
-- Guardrails (turns, cost, timeout)
-- Same tool implementations
-- No hooks, checkpointing, or review loop
-
 ## Architecture
 
 ```
@@ -82,5 +78,5 @@ config/
 python/src/tool_use_cli/
   tools.py        — Tool implementations (CLIToolProvider)
   hooks.py        — CLIToolHooks (tool provider, file tracking, human review action)
-  main.py         — Entry point (machine or standalone mode)
+  main.py         — Entry point (REPL, -p single-shot, or --standalone)
 ```

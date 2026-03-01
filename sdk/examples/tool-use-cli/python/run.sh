@@ -6,17 +6,11 @@ VENV_PATH=".venv"
 
 # --- Parse Arguments ---
 LOCAL_INSTALL=false
-STANDALONE=false
 PASSTHROUGH_ARGS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --local|-l)
             LOCAL_INSTALL=true
-            shift
-            ;;
-        --standalone|-s)
-            STANDALONE=true
-            PASSTHROUGH_ARGS+=("--standalone")
             shift
             ;;
         *)
