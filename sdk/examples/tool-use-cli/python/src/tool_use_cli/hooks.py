@@ -117,10 +117,13 @@ class CLIToolHooks(MachineHooks):
             response = ""
 
         if response:
+            # Append feedback directly to the message chain so the LLM
+            # sees it as a continuation — prefix cache stays intact
+            chain = context.get("_tool_loop_chain", [])
+            chain.append({"role": "user", "content": response})
+            context["_tool_loop_chain"] = chain
             context["human_approved"] = False
-            context["feedback"] = response
         else:
             context["human_approved"] = True
-            context["feedback"] = ""
 
         return context

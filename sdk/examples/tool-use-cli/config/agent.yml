@@ -19,11 +19,6 @@ data:
 
   user: |
     {{ input.task }}
-    {% if input.feedback %}
-
-    Previous feedback from human reviewer:
-    {{ input.feedback }}
-    {% endif %}
 
   tools:
     - type: function

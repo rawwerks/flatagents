@@ -19,18 +19,51 @@ A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the 
 | `write` | Write/create files with automatic parent directory creation |
 | `edit` | Surgical find-and-replace (exact match, single occurrence) |
 
-## Usage
+## Quick Start (Play-by-Play)
+
+### Step 1: Navigate to the project
+```bash
+cd sdk/examples/tool-use-cli/python
+```
+
+### Step 2: Run in interactive mode
+```bash
+./run.sh --local
+```
+
+### Step 3: Give the agent a task
+```
+> list all Python files in this repo
+```
+
+### Step 4: Watch the agent work
+- Agent thinks about the task
+- Agent calls tools (read, bash, write, edit)
+- You see each tool call in real-time
+- Output shows tokens used and cost
+
+### Step 5: Review and approve
+- Agent pauses after completing the task
+- You see the results
+- Type `approve` to accept, or give feedback to refine
+- If feedback given, agent loops back to Step 3
+
+### Step 6: Repeat or exit
+- Type a new task to continue
+- Press `^C` twice or `^D` to exit
+
+## Usage Modes
 
 ```bash
 cd sdk/examples/tool-use-cli/python
 
-# Default: interactive REPL
+# Interactive REPL (default) — best for exploration
 ./run.sh --local
 
-# Single-shot mode (-p / --print)
+# Single-shot mode — run one task and exit
 ./run.sh --local -p "list all Python files in this repo"
 
-# Standalone mode (ToolLoopAgent, no machine, no human review)
+# Standalone mode — no human review, runs to completion
 ./run.sh --local --standalone "what files are in the current directory?"
 
 # Custom working directory

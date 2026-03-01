@@ -1342,8 +1342,10 @@ class FlatMachine:
         variables = {"context": context, "input": context}
         agent_input = self._render_dict(input_spec, variables)
 
-        # State for the loop
-        chain: List[Dict[str, Any]] = []
+        # Restore chain from prior round if available (preserves prefix cache)
+        saved_chain = context.pop('_tool_loop_chain', None)
+        has_prior_chain = bool(saved_chain)
+        chain: List[Dict[str, Any]] = saved_chain if saved_chain else []
         turns = 0
         tool_calls_count = 0
         loop_cost = 0.0
@@ -1363,7 +1365,8 @@ class FlatMachine:
                 break
 
             # --- Call agent via execute_with_tools ---
-            if turns == 0:
+            if turns == 0 and not has_prior_chain:
+                # First call ever — render user prompt from input_data
                 result = await executor.execute_with_tools(
                     input_data=agent_input,
                     tools=tool_defs,
@@ -1371,6 +1374,7 @@ class FlatMachine:
                     context=context,
                 )
             else:
+                # Continuation — pass chain (preserves prefix cache)
                 result = await executor.execute_with_tools(
                     input_data={},
                     tools=tool_defs,
@@ -1538,6 +1542,9 @@ class FlatMachine:
             if steering:
                 for msg in steering:
                     chain.append(msg)
+
+        # Save chain to context for potential continuation (preserves prefix cache)
+        context['_tool_loop_chain'] = chain
 
         # --- Build output ---
         output = {

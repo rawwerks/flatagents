@@ -9,7 +9,6 @@ data:
     task: "{{ input.task }}"
     working_dir: "{{ input.working_dir }}"
     human_approved: false
-    feedback: ""
 
   agents:
     coder: ./agent.yml
@@ -30,7 +29,6 @@ data:
         total_timeout: 600
       input:
         task: "{{ context.task }}"
-        feedback: "{{ context.feedback }}"
       output_to_context:
         result: "{{ output.content }}"
       transitions:
