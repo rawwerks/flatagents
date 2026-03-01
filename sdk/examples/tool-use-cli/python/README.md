@@ -2,6 +2,14 @@
 
 A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the same defaults as pi-mono. Includes human-in-the-loop review after each agent run.
 
+## Recent Features
+
+- **Bare prompt with readline** — Clean REPL interface with double ^C/^D to exit
+- **Tool call visibility** — See agent thinking, tool calls, tokens used, and cost in real-time
+- **Quiet by default** — Logs silenced via `LOG_LEVEL` env var for cleaner output
+- **Human-in-the-loop review** — Approve or provide feedback on agent actions
+- **Multiple execution modes** — REPL, single-shot, and standalone modes
+
 ## Tools
 
 | Tool | Description |
