@@ -49,7 +49,10 @@ class SignalDispatcher:
     async def dispatch(self, channel: str) -> List[str]:
         """Process one signal on a channel.
 
-        Consumes the next signal, finds waiting machines, and resumes them.
+        Consumes the signal, fans out one copy per waiting machine,
+        then resumes each. Each machine consumes its copy on resume.
+
+        Works for both addressed (1 waiter) and broadcast (N waiters).
 
         Returns:
             List of execution IDs that were resumed
@@ -68,9 +71,12 @@ class SignalDispatcher:
                 f"Signal on '{channel}' but no waiting machines. "
                 f"Re-queuing signal."
             )
-            # Put it back — no one to consume it
             await self.signal_backend.send(channel, signal.data)
             return []
+
+        # Fan out: one copy per waiter so each machine can consume on resume
+        for _ in execution_ids:
+            await self.signal_backend.send(channel, signal.data)
 
         resumed = []
         for eid in execution_ids:
@@ -125,28 +131,30 @@ class SignalDispatcher:
 
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         sock.bind(str(path))
-        sock.setblocking(False)
+        # Blocking with timeout — recv blocks in executor thread, timeout
+        # lets us check stop_event periodically
+        sock.settimeout(1.0)
 
         loop = asyncio.get_event_loop()
         logger.info(f"Dispatcher listening on {socket_path}")
 
+        def _recv():
+            try:
+                return sock.recv(4096)
+            except socket.timeout:
+                return None
+            except OSError:
+                return None
+
         try:
             while not (stop_event and stop_event.is_set()):
-                try:
-                    data = await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: sock.recv(4096)),
-                        timeout=1.0,
-                    )
-                    channel = data.decode("utf-8").strip()
-                    if channel:
-                        logger.debug(f"Trigger received for channel: {channel}")
-                        await self.dispatch(channel)
-                except asyncio.TimeoutError:
+                data = await loop.run_in_executor(None, _recv)
+                if data is None:
                     continue
-                except OSError:
-                    if stop_event and stop_event.is_set():
-                        break
-                    raise
+                channel = data.decode("utf-8").strip()
+                if channel:
+                    logger.debug(f"Trigger received for channel: {channel}")
+                    await self.dispatch(channel)
         finally:
             sock.close()
             path.unlink(missing_ok=True)
