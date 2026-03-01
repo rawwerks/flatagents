@@ -5,11 +5,7 @@ data:
   model_profiles:
     default:
       provider: anthropic
-      name: claude-sonnet-4-20250514
-      temperature: 0.5
-    fast:
-      provider: cerebras
-      name: zai-glm-4.7
-      temperature: 0.6
+      name: claude-haiku-4-5
+      temperature: 0.0
 
   default: default
