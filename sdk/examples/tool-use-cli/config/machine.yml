@@ -8,6 +8,9 @@ data:
   context:
     task: "{{ input.task }}"
     working_dir: "{{ input.working_dir }}"
+    human_approved: false
+    feedback: ""
+    iteration: 0
 
   agents:
     coder: ./agent.yml
@@ -28,14 +31,23 @@ data:
         total_timeout: 600
       input:
         task: "{{ context.task }}"
+        feedback: "{{ context.feedback }}"
       output_to_context:
         result: "{{ output.content }}"
         tool_calls: "{{ output._tool_calls_count }}"
         turns: "{{ output._tool_loop_turns }}"
         cost: "{{ output._tool_loop_cost }}"
         stop_reason: "{{ output._tool_loop_stop }}"
+        iteration: "{{ context.iteration + 1 }}"
       transitions:
-        - to: done
+        - to: human_review
+
+    human_review:
+      action: human_review
+      transitions:
+        - condition: "context.human_approved == true"
+          to: done
+        - to: work
 
     done:
       type: final
@@ -44,8 +56,8 @@ data:
         tool_calls: "{{ context.tool_calls }}"
         turns: "{{ context.turns }}"
         cost: "{{ context.cost }}"
-        stop_reason: "{{ context.stop_reason }}"
+        iterations: "{{ context.iteration }}"
 
 metadata:
-  description: "CLI coding agent with tool loop"
-  tags: ["tool-use", "cli"]
+  description: "CLI coding agent with tool loop and human-in-the-loop review"
+  tags: ["tool-use", "cli", "human-in-loop"]

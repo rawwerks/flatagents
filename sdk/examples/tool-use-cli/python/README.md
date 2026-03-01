@@ -1,6 +1,6 @@
 # Tool Use CLI Example
 
-A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the same defaults as pi-mono. Demonstrates both FlatMachine (orchestrated) and standalone ToolLoopAgent modes.
+A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the same defaults as pi-mono. Includes human-in-the-loop review after each agent run. Demonstrates both FlatMachine (orchestrated) and standalone ToolLoopAgent modes.
 
 ## Tools
 
@@ -10,6 +10,30 @@ A coding agent with 4 tools — **read**, **write**, **bash**, **edit** — the 
 | `bash` | Execute shell commands with timeout, tail-truncated output |
 | `write` | Write/create files with automatic parent directory creation |
 | `edit` | Surgical find-and-replace (exact match, single occurrence) |
+
+## Flow
+
+```
+┌─────────────────┐
+│      start      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│      work       │◄──────────┐
+│  (tool loop)    │           │
+└────────┬────────┘           │
+         │                    │ feedback
+         ▼                    │
+┌─────────────────┐           │
+│  human_review   │───────────┘
+└────────┬────────┘
+         │ approved
+         ▼
+┌─────────────────┐
+│      done       │
+└─────────────────┘
+```
 
 ## Usage
 
@@ -22,7 +46,7 @@ cd sdk/examples/tool-use-cli/python
 # Or directly (if deps are installed)
 python -m tool_use_cli.main "read README.md and summarize it"
 
-# Standalone mode (ToolLoopAgent, no machine)
+# Standalone mode (ToolLoopAgent, no machine, no human review)
 python -m tool_use_cli.main --standalone "what files are in the current directory?"
 
 # Custom working directory
@@ -33,36 +57,30 @@ python -m tool_use_cli.main --working-dir /tmp/project "create a hello world Pyt
 
 ### Machine Mode (default)
 
-Uses `FlatMachine` with a `tool_loop` state. Gets you:
+Uses `FlatMachine` with a `tool_loop` state + human review loop. Gets you:
 - Per-tool-call hooks (`on_tool_calls`, `on_tool_result`)
 - Checkpointing after every tool call
-- Transition evaluation mid-loop
+- Human-in-the-loop approval after each agent run
+- Feedback loop — reject with feedback and the agent tries again
 - File modification tracking via hooks
 
 ### Standalone Mode (`--standalone`)
 
-Uses `ToolLoopAgent` directly. Simpler, no machine overhead. Gets you:
+Uses `ToolLoopAgent` directly. No machine, no human review. Gets you:
 - Guardrails (turns, cost, timeout)
 - Same tool implementations
-- No hooks or checkpointing
+- No hooks, checkpointing, or review loop
 
 ## Architecture
 
 ```
 config/
-  agent.yml       — Agent config with tool definitions in YAML
-  machine.yml     — Machine config with tool_loop state
+  agent.yml       — Agent config with tool definitions + feedback handling
+  machine.yml     — Machine with work → human_review → done loop
   profiles.yml    — Model profiles
 
 python/src/tool_use_cli/
   tools.py        — Tool implementations (CLIToolProvider)
-  hooks.py        — CLIToolHooks (provides tool provider, tracks file modifications)
+  hooks.py        — CLIToolHooks (tool provider, file tracking, human review action)
   main.py         — Entry point (machine or standalone mode)
 ```
-
-## How It Works
-
-1. Tool **definitions** live in `agent.yml` (`data.tools`) — the LLM sees these
-2. Tool **execution** lives in `CLIToolProvider` — bound to a working directory
-3. The machine's `tool_loop` state calls the agent, gets tool requests, executes them one-by-one with hooks and checkpoints between each call
-4. The `on_tool_result` hook tracks which files were modified by write/edit operations
