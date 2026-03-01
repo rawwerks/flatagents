@@ -31,7 +31,7 @@ def test_execute_task_has_on_error_to_error_exit():
 
 
 
-def test_done_output_has_result_fields():
+def test_final_output_contains_typed_children_list():
     mod = _task_machine_module()
     cfg = mod.task_config()
 
@@ -39,6 +39,7 @@ def test_done_output_has_result_fields():
     assert "task_id" in out
     assert "root_id" in out
     assert "result" in out
+    assert "children" in out
 
 
 

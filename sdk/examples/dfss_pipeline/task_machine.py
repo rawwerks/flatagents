@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 
-
 def task_config() -> dict:
+    """Reusable FlatMachine config for one DFSS task execution."""
     return {
         "spec": "flatmachine",
         "spec_version": "1.1.1",
@@ -14,6 +14,8 @@ def task_config() -> dict:
                 "depth": "input.depth",
                 "resource_class": "input.resource_class",
                 "has_expensive_descendant": "input.has_expensive_descendant",
+                "distance_to_nearest_slow_descendant": "input.distance_to_nearest_slow_descendant",
+                "children": [],
                 "result": None,
             },
             "states": {
@@ -31,7 +33,10 @@ def task_config() -> dict:
                     "output": {
                         "task_id": "context.task_id",
                         "root_id": "context.root_id",
+                        "depth": "context.depth",
+                        "resource_class": "context.resource_class",
                         "result": "context.result",
+                        "children": "context.children",
                     },
                 },
                 "error_exit": {

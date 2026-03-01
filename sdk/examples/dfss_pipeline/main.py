@@ -3,20 +3,34 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import inspect
+import json
+import random
+import signal
 import sqlite3
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from flatmachines import CheckpointManager, FlatMachine, SQLiteCheckpointBackend, SQLiteWorkBackend
 
 from hooks import TaskHooks
-from scheduler import ResourcePool, RootState, run
-from workflow_plan import build_workflow_plan
+from scheduler import ResourcePool, RootState, add_candidate, recompute_root_metrics, run
+from task_machine import task_config
 
 
-def _connect(db_path: str) -> sqlite3.Connection:
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30.0)
+logging.getLogger("flatmachines").setLevel(logging.WARNING)
+
+POOL_NAME = "tasks"
+WORKER_ID = "scheduler"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sqlite_conn(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
@@ -24,206 +38,240 @@ def _connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS tasks (
-            task_id TEXT PRIMARY KEY,
-            root_id TEXT NOT NULL,
-            parent_id TEXT,
-            depth INTEGER NOT NULL,
-            resource_class TEXT NOT NULL,
-            has_expensive_descendant INTEGER NOT NULL DEFAULT 0,
-            distance_to_nearest_slow_descendant INTEGER NOT NULL DEFAULT 10000,
-            status TEXT NOT NULL,
-            attempts INTEGER NOT NULL DEFAULT 0,
-            result TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-        CREATE INDEX IF NOT EXISTS idx_tasks_root_status ON tasks(root_id, status);
-
-        CREATE TABLE IF NOT EXISTS run_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-        """
-    )
-    conn.commit()
-
-
-def _seed_plan(conn: sqlite3.Connection, roots: int, max_depth: int, seed: int) -> None:
-    plan = build_workflow_plan(roots=roots, max_depth=max_depth, seed=seed)
-
-    conn.execute("DELETE FROM tasks")
-    conn.execute("DELETE FROM run_meta")
-
-    for task_id, node in plan["nodes"].items():
-        parent_id = node.get("parent_id")
-        status = "ready" if not parent_id else "blocked"
+def _ensure_meta_table(db_path: str) -> None:
+    with _sqlite_conn(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO tasks (
-                task_id, root_id, parent_id, depth, resource_class,
-                has_expensive_descendant, distance_to_nearest_slow_descendant,
-                status, attempts, result
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
-            """,
-            (
-                task_id,
-                node["root_id"],
-                parent_id,
-                int(node["depth"]),
-                node["resource_class"],
-                1 if node.get("has_expensive_descendant") else 0,
-                int(node.get("distance_to_nearest_slow_descendant", 10000)),
-                status,
-            ),
+            CREATE TABLE IF NOT EXISTS dfss_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
         )
 
-    conn.execute("INSERT INTO run_meta(key, value) VALUES('seed', ?)", (str(seed),))
-    conn.execute("INSERT INTO run_meta(key, value) VALUES('roots', ?)", (str(roots),))
-    conn.commit()
+
+def _save_meta(db_path: str, values: Dict[str, Any]) -> None:
+    _ensure_meta_table(db_path)
+    with _sqlite_conn(db_path) as conn:
+        conn.execute("DELETE FROM dfss_meta")
+        for key, value in values.items():
+            conn.execute(
+                "INSERT INTO dfss_meta(key, value) VALUES(?, ?)",
+                (str(key), json.dumps(value)),
+            )
 
 
-def _release_stale_running(conn: sqlite3.Connection) -> int:
-    cur = conn.execute("UPDATE tasks SET status='ready' WHERE status='running'")
-    conn.commit()
-    return int(cur.rowcount or 0)
+def _load_meta(db_path: str) -> Dict[str, Any]:
+    _ensure_meta_table(db_path)
+    with _sqlite_conn(db_path) as conn:
+        rows = conn.execute("SELECT key, value FROM dfss_meta").fetchall()
+    out: Dict[str, Any] = {}
+    for row in rows:
+        try:
+            out[row["key"]] = json.loads(row["value"])
+        except Exception:
+            out[row["key"]] = row["value"]
+    return out
 
 
-def _task_row_to_item(row: sqlite3.Row) -> Dict[str, Any]:
+def _candidate_from_row(row: sqlite3.Row) -> Optional[Dict[str, Any]]:
+    try:
+        data = json.loads(row["data"])
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    if "task_id" not in data or "root_id" not in data:
+        return None
+
     return {
-        "task_id": row["task_id"],
-        "root_id": row["root_id"],
-        "depth": int(row["depth"]),
-        "resource_class": row["resource_class"],
-        "has_expensive_descendant": bool(row["has_expensive_descendant"]),
-        "distance_to_nearest_slow_descendant": int(row["distance_to_nearest_slow_descendant"]),
+        "work_id": row["item_id"],
+        "task_id": data["task_id"],
+        "root_id": data["root_id"],
+        "depth": int(data.get("depth", 0)),
+        "resource_class": str(data.get("resource_class", "fast")),
+        "has_expensive_descendant": bool(data.get("has_expensive_descendant", False)),
+        "distance_to_nearest_slow_descendant": int(data.get("distance_to_nearest_slow_descendant", 10_000)),
         "attempts": int(row["attempts"]),
     }
 
 
-def _load_ready_candidates(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT task_id, root_id, depth, resource_class,
-               has_expensive_descendant, distance_to_nearest_slow_descendant, attempts
-        FROM tasks
-        WHERE status = 'ready'
-        ORDER BY depth DESC, task_id ASC
-        """
-    ).fetchall()
-    return [_task_row_to_item(r) for r in rows]
+def _load_pending_candidates(db_path: str, pool_name: str = POOL_NAME) -> List[Dict[str, Any]]:
+    with _sqlite_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT item_id, data, attempts
+            FROM work_pool
+            WHERE pool_name = ? AND status = 'pending'
+            ORDER BY created_at ASC
+            """,
+            (pool_name,),
+        ).fetchall()
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        item = _candidate_from_row(row)
+        if item is not None:
+            candidates.append(item)
+    return candidates
 
 
-def _build_roots(conn: sqlite3.Connection) -> Dict[str, RootState]:
-    rows = conn.execute(
-        """
-        SELECT
-            root_id,
-            SUM(CASE WHEN status NOT IN ('done','failed_terminal') THEN 1 ELSE 0 END) AS pending,
-            SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS in_flight,
-            SUM(CASE WHEN status NOT IN ('done','failed_terminal') AND resource_class = 'slow' THEN 1 ELSE 0 END) AS slow_pending
-        FROM tasks
-        GROUP BY root_id
-        """
-    ).fetchall()
+def _load_pending_candidate(db_path: str, work_id: str, pool_name: str = POOL_NAME) -> Optional[Dict[str, Any]]:
+    with _sqlite_conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT item_id, data, attempts
+            FROM work_pool
+            WHERE pool_name = ? AND item_id = ? AND status = 'pending'
+            """,
+            (pool_name, work_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return _candidate_from_row(row)
 
-    roots: Dict[str, RootState] = {}
-    for r in rows:
-        roots[r["root_id"]] = RootState(
-            root_id=r["root_id"],
-            admitted=False,
-            in_flight=int(r["in_flight"] or 0),
-            pending=int(r["pending"] or 0),
-            has_pending_expensive=bool(r["slow_pending"] or 0),
+
+def _claim_selected_candidate(
+    db_path: str,
+    work_id: str,
+    *,
+    worker_id: str = WORKER_ID,
+    pool_name: str = POOL_NAME,
+) -> Optional[Dict[str, Any]]:
+    with _sqlite_conn(db_path) as conn:
+        updated = conn.execute(
+            """
+            UPDATE work_pool
+            SET status = 'claimed', claimed_by = ?, claimed_at = ?, attempts = attempts + 1
+            WHERE pool_name = ? AND item_id = ? AND status = 'pending'
+            """,
+            (worker_id, _now_iso(), pool_name, work_id),
         )
-    return roots
+        if updated.rowcount == 0:
+            return None
+
+        row = conn.execute(
+            """
+            SELECT item_id, data, attempts
+            FROM work_pool
+            WHERE pool_name = ? AND item_id = ?
+            """,
+            (pool_name, work_id),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return _candidate_from_row(row)
 
 
-def _refresh_root_flags(conn: sqlite3.Connection, root: RootState) -> None:
-    row = conn.execute(
-        """
-        SELECT
-            SUM(CASE WHEN status NOT IN ('done','failed_terminal') THEN 1 ELSE 0 END) AS pending,
-            SUM(CASE WHEN status NOT IN ('done','failed_terminal') AND resource_class='slow' THEN 1 ELSE 0 END) AS slow_pending
-        FROM tasks
-        WHERE root_id = ?
-        """,
-        (root.root_id,),
-    ).fetchone()
-    root.pending = int((row["pending"] if row else 0) or 0)
-    root.has_pending_expensive = bool((row["slow_pending"] if row else 0) or 0)
-
-
-def _mark_running(conn: sqlite3.Connection, task_id: str) -> int:
-    conn.execute(
-        "UPDATE tasks SET status='running', attempts=attempts+1 WHERE task_id=?",
-        (task_id,),
-    )
-    row = conn.execute("SELECT attempts FROM tasks WHERE task_id=?", (task_id,)).fetchone()
-    conn.commit()
-    return int(row["attempts"] if row else 1)
-
-
-def _mark_ready(conn: sqlite3.Connection, task_id: str) -> None:
-    conn.execute("UPDATE tasks SET status='ready' WHERE task_id=?", (task_id,))
-    conn.commit()
-
-
-def _mark_done(conn: sqlite3.Connection, task_id: str, result: str) -> None:
-    conn.execute("UPDATE tasks SET status='done', result=? WHERE task_id=?", (result, task_id))
-    conn.commit()
-
-
-def _mark_failed(conn: sqlite3.Connection, task_id: str, error: str) -> None:
-    conn.execute(
-        "UPDATE tasks SET status='failed_terminal', result=? WHERE task_id=?",
-        (error[:500], task_id),
-    )
-    conn.commit()
-
-
-def _unlock_children(conn: sqlite3.Connection, parent_id: str) -> List[Dict[str, Any]]:
-    conn.execute(
-        "UPDATE tasks SET status='ready' WHERE parent_id=? AND status='blocked'",
-        (parent_id,),
-    )
-    rows = conn.execute(
-        """
-        SELECT task_id, root_id, depth, resource_class,
-               has_expensive_descendant, distance_to_nearest_slow_descendant, attempts
-        FROM tasks
-        WHERE parent_id=? AND status='ready'
-        ORDER BY task_id ASC
-        """,
-        (parent_id,),
-    ).fetchall()
-    conn.commit()
-    return [_task_row_to_item(r) for r in rows]
-
-
-def _root_complete(conn: sqlite3.Connection, root_id: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) AS c FROM tasks WHERE root_id=? AND status NOT IN ('done','failed_terminal')",
-        (root_id,),
-    ).fetchone()
-    return int(row["c"] if row else 0) == 0
-
-
-def _pending_total(conn: sqlite3.Connection) -> int:
-    row = conn.execute(
-        "SELECT COUNT(*) AS c FROM tasks WHERE status NOT IN ('done','failed_terminal')"
-    ).fetchone()
+def _unfinished_work_count(db_path: str, pool_name: str = POOL_NAME) -> int:
+    with _sqlite_conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM work_pool
+            WHERE pool_name = ? AND status IN ('pending', 'claimed')
+            """,
+            (pool_name,),
+        ).fetchone()
     return int(row["c"] if row else 0)
 
 
-async def _toggle_slow_gate(resources: Dict[str, ResourcePool], stop: asyncio.Event, interval: float = 0.8) -> None:
-    print("  ⚡ slow gate -> OPEN", flush=True)
-    while not stop.is_set():
+def _root_terminal_failures(db_path: str, pool_name: str = POOL_NAME) -> Dict[str, int]:
+    with _sqlite_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT data
+            FROM work_pool
+            WHERE pool_name = ? AND status = 'poisoned'
+            """,
+            (pool_name,),
+        ).fetchall()
+
+    out: Dict[str, int] = {}
+    for row in rows:
         try:
-            await asyncio.wait_for(stop.wait(), timeout=interval)
+            data = json.loads(row["data"])
+            root_id = str(data.get("root_id"))
+        except Exception:
+            continue
+        if root_id:
+            out[root_id] = out.get(root_id, 0) + 1
+    return out
+
+
+def _initial_root_task(root_id: str, max_depth: int, rng: random.Random) -> Dict[str, Any]:
+    if root_id == "root-000":
+        return {
+            "task_id": "root-000/0",
+            "root_id": "root-000",
+            "depth": 0,
+            "resource_class": "fast",
+            "has_expensive_descendant": True,
+            "distance_to_nearest_slow_descendant": 2,
+        }
+
+    if root_id == "root-001":
+        return {
+            "task_id": "root-001/0",
+            "root_id": "root-001",
+            "depth": 0,
+            "resource_class": "fast",
+            "has_expensive_descendant": True,
+            "distance_to_nearest_slow_descendant": 3,
+        }
+
+    resource_class = rng.choice(["fast", "slow"])
+    hint = resource_class == "fast" and (rng.random() < 0.35)
+    distance = 0 if resource_class == "slow" else (rng.randint(1, max(1, max_depth)) if hint else 10_000)
+    return {
+        "task_id": f"{root_id}/0",
+        "root_id": root_id,
+        "depth": 0,
+        "resource_class": resource_class,
+        "has_expensive_descendant": bool(hint),
+        "distance_to_nearest_slow_descendant": int(distance),
+    }
+
+
+async def _seed_roots(
+    pool,
+    *,
+    roots: int,
+    max_depth: int,
+    seed: int,
+    max_attempts: int,
+) -> List[str]:
+    rng = random.Random(seed)
+    root_ids = [f"root-{i:03d}" for i in range(roots)]
+
+    for root_id in root_ids:
+        item = _initial_root_task(root_id=root_id, max_depth=max_depth, rng=rng)
+        await pool.push(item, options={"max_retries": max_attempts})
+
+    return root_ids
+
+
+def _build_root_states(root_ids: List[str], candidates: List[Dict[str, Any]]) -> Dict[str, RootState]:
+    if not root_ids:
+        root_ids = sorted({c["root_id"] for c in candidates})
+
+    roots = {rid: RootState(root_id=rid) for rid in root_ids}
+    recompute_root_metrics(roots, candidates)
+    return roots
+
+
+async def _toggle_slow_gate(
+    resources: Dict[str, ResourcePool],
+    stop_event: asyncio.Event,
+    interval: float,
+) -> None:
+    print("  ⚡ slow gate -> OPEN", flush=True)
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
             break
         except asyncio.TimeoutError:
             pass
@@ -234,80 +282,212 @@ async def _toggle_slow_gate(resources: Dict[str, ResourcePool], stop: asyncio.Ev
         print(f"  ⚡ slow gate -> {state}", flush=True)
 
 
+async def _resume_status_report(checkpoint_backend: SQLiteCheckpointBackend) -> None:
+    all_execs = set(await checkpoint_backend.list_execution_ids())
+    completed = set(await checkpoint_backend.list_execution_ids(event="machine_end"))
+    incomplete = sorted(all_execs - completed)
+
+    print(
+        f"Resume status: total executions={len(all_execs)}, completed={len(completed)}, incomplete={len(incomplete)}",
+        flush=True,
+    )
+    for execution_id in incomplete[:10]:
+        status = await CheckpointManager(checkpoint_backend, execution_id).load_status()
+        if status is None:
+            print(f"  - {execution_id}: unknown", flush=True)
+            continue
+        event, state = status
+        print(f"  - {execution_id}: event={event}, state={state}", flush=True)
+
+
+async def _post_run_report(
+    checkpoint_backend: SQLiteCheckpointBackend,
+    *,
+    cleanup: bool,
+) -> None:
+    all_execs = await checkpoint_backend.list_execution_ids()
+    completed = await checkpoint_backend.list_execution_ids(event="machine_end")
+    print(
+        f"Checkpoint summary: total={len(all_execs)}, completed={len(completed)}, incomplete={len(set(all_execs) - set(completed))}",
+        flush=True,
+    )
+
+    if cleanup:
+        for execution_id in completed:
+            await checkpoint_backend.delete_execution(execution_id)
+        print(f"Cleanup: deleted {len(completed)} completed checkpoints", flush=True)
+
+
 async def _run_pipeline(args: argparse.Namespace) -> int:
-    conn = _connect(args.db_path)
-    _ensure_schema(conn)
+    db_path = str(Path(args.db_path).resolve())
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if not args.resume and Path(db_path).exists():
+        Path(db_path).unlink()
+
+    checkpoint_backend = SQLiteCheckpointBackend(db_path=db_path)
+    work_backend = SQLiteWorkBackend(db_path=db_path)
+    pool = work_backend.pool(POOL_NAME)
 
     if args.resume:
-        released = _release_stale_running(conn)
-        print(f"Resuming run from {args.db_path} (released {released} stale running tasks)", flush=True)
+        meta = _load_meta(db_path)
+        root_ids = list(meta.get("root_ids", []))
+        args.max_depth = int(meta.get("max_depth", args.max_depth))
+        args.max_attempts = int(meta.get("max_attempts", args.max_attempts))
+        seed = int(meta.get("seed", args.seed))
+
+        released = await pool.release_by_worker(WORKER_ID)
+        print(f"Resuming from {db_path} (released {released} stale claims)", flush=True)
+        await _resume_status_report(checkpoint_backend)
     else:
-        _seed_plan(conn, roots=args.roots, max_depth=args.max_depth, seed=args.seed)
+        root_ids = await _seed_roots(
+            pool,
+            roots=args.roots,
+            max_depth=args.max_depth,
+            seed=args.seed,
+            max_attempts=args.max_attempts,
+        )
+        _save_meta(
+            db_path,
+            {
+                "root_ids": root_ids,
+                "roots": args.roots,
+                "max_depth": args.max_depth,
+                "seed": args.seed,
+                "max_attempts": args.max_attempts,
+            },
+        )
+        seed = int(args.seed)
         print(
-            f"Seeded upfront workflow plan: roots={args.roots}, max_depth={args.max_depth}, seed={args.seed}",
+            f"Seeded roots={args.roots}, max_depth={args.max_depth}, seed={args.seed}, max_attempts={args.max_attempts}",
             flush=True,
         )
 
-    candidates = _load_ready_candidates(conn)
-    roots = _build_roots(conn)
+    candidates = _load_pending_candidates(db_path)
+    roots = _build_root_states(root_ids, candidates)
 
-    resources = {
-        "fast": ResourcePool("fast", capacity=4, in_flight=0, gate_open=True),
-        "slow": ResourcePool("slow", capacity=2, in_flight=0, gate_open=True),
+    resources: Dict[str, ResourcePool] = {
+        "fast": ResourcePool(name="fast", capacity=4, gate_open=True),
+        "slow": ResourcePool(name="slow", capacity=2, gate_open=True),
     }
 
-    hooks = TaskHooks(max_depth=args.max_depth, fail_rate=args.fail_rate, seed=args.seed)
-    completed_roots: set[str] = set()
+    hooks = TaskHooks(max_depth=args.max_depth, fail_rate=args.fail_rate, seed=seed)
+    machine_cfg = task_config()
+
+    announced_complete: set[str] = set()
+    terminal_by_root = _root_terminal_failures(db_path)
+    for rid, count in terminal_by_root.items():
+        if rid in roots:
+            roots[rid].terminal_failures = count
+
+    stop_event = asyncio.Event()
+
+    def _on_signal() -> None:
+        stop_event.set()
+
+    loop = asyncio.get_running_loop()
+    try:
+        loop.add_signal_handler(signal.SIGINT, _on_signal)
+        loop.add_signal_handler(signal.SIGTERM, _on_signal)
+    except (NotImplementedError, RuntimeError):
+        pass
+
+    def _refresh_and_report_roots() -> None:
+        recompute_root_metrics(roots, candidates)
+        for root in roots.values():
+            if root.is_done and root.root_id not in announced_complete:
+                announced_complete.add(root.root_id)
+                state = "COMPLETE" if root.terminal_failures == 0 else "COMPLETE_WITH_TERMINAL_FAILURES"
+                print(f"  🏁 {root.root_id} {state}", flush=True)
 
     async def dispatch(item: Dict[str, Any]) -> None:
-        task_id = item["task_id"]
-        root_id = item["root_id"]
-        attempts = _mark_running(conn, task_id)
-
-        # Simulated work duration.
-        if item["resource_class"] == "slow":
-            await asyncio.sleep(0.80)
-        else:
-            await asyncio.sleep(0.35)
-
-        context = dict(item)
-        try:
-            result = hooks.on_action("run_task", context)
-            if inspect.isawaitable(result):
-                result = await result
-        except Exception as exc:
-            if attempts < 3:
-                _mark_ready(conn, task_id)
-                row = conn.execute(
-                    "SELECT task_id, root_id, depth, resource_class, has_expensive_descendant, distance_to_nearest_slow_descendant, attempts FROM tasks WHERE task_id=?",
-                    (task_id,),
-                ).fetchone()
-                if row is not None:
-                    candidates.append(_task_row_to_item(row))
-                print(f"  ⟳ {task_id:20s} retry attempt {attempts}", flush=True)
-            else:
-                _mark_failed(conn, task_id, str(exc))
-                _refresh_root_flags(conn, roots[root_id])
-                print(f"  ✗ {task_id:20s} terminal: {exc}", flush=True)
+        claimed = _claim_selected_candidate(db_path, work_id=item["work_id"])
+        if claimed is None:
             return
 
-        _mark_done(conn, task_id, str(result.get("result", "ok")))
-        unlocked = _unlock_children(conn, task_id)
-        candidates.extend(unlocked)
-        _refresh_root_flags(conn, roots[root_id])
+        root_id = claimed["root_id"]
+        task_payload = {
+            "task_id": claimed["task_id"],
+            "root_id": claimed["root_id"],
+            "depth": claimed["depth"],
+            "resource_class": claimed["resource_class"],
+            "has_expensive_descendant": claimed["has_expensive_descendant"],
+            "distance_to_nearest_slow_descendant": claimed["distance_to_nearest_slow_descendant"],
+        }
 
-        suffix = f"→ {len(unlocked)} children" if unlocked else "→ leaf"
+        machine = FlatMachine(
+            config_dict=machine_cfg,
+            hooks=hooks,
+            persistence=checkpoint_backend,
+            _execution_id=claimed["work_id"],
+        )
+
+        try:
+            latest_ptr = await checkpoint_backend.load(f"{claimed['work_id']}/latest")
+            if latest_ptr:
+                output = await machine.execute(input=task_payload, resume_from=claimed["work_id"])
+            else:
+                output = await machine.execute(input=task_payload)
+        except Exception as exc:  # Defensive: machine-level unexpected failure
+            output = {"error": str(exc)}
+
+        error = output.get("error") if isinstance(output, dict) else "unknown task failure"
+        if error:
+            await pool.fail(claimed["work_id"], str(error))
+
+            if int(claimed["attempts"]) >= args.max_attempts:
+                if root_id in roots:
+                    roots[root_id].terminal_failures += 1
+                print(
+                    f"  ✗ {claimed['task_id']:24s} terminal after {claimed['attempts']} attempts: {error}",
+                    flush=True,
+                )
+                return
+
+            pending_retry = _load_pending_candidate(db_path, claimed["work_id"])
+            if pending_retry is not None:
+                add_candidate(candidates, pending_retry)
+            print(
+                f"  ⟳ {claimed['task_id']:24s} retry {claimed['attempts']}/{args.max_attempts}",
+                flush=True,
+            )
+            return
+
+        await pool.complete(claimed["work_id"], output)
+        if root_id in roots:
+            roots[root_id].completed += 1
+
+        children = output.get("children") if isinstance(output, dict) else []
+        if not isinstance(children, list):
+            children = []
+
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            work_id = await pool.push(child, options={"max_retries": args.max_attempts})
+            add_candidate(
+                candidates,
+                {
+                    "work_id": work_id,
+                    "task_id": child["task_id"],
+                    "root_id": child["root_id"],
+                    "depth": int(child.get("depth", 0)),
+                    "resource_class": str(child.get("resource_class", "fast")),
+                    "has_expensive_descendant": bool(child.get("has_expensive_descendant", False)),
+                    "distance_to_nearest_slow_descendant": int(child.get("distance_to_nearest_slow_descendant", 10_000)),
+                    "attempts": 0,
+                },
+            )
+
+        suffix = f"→ {len(children)} children" if children else "→ leaf"
         print(
-            f"  ✓ {task_id:20s} (d={item['depth']} {item['resource_class']}) {suffix}",
+            f"  ✓ {claimed['task_id']:24s} (d={claimed['depth']} {claimed['resource_class']}) {suffix}",
             flush=True,
         )
 
-        if _root_complete(conn, root_id) and root_id not in completed_roots:
-            completed_roots.add(root_id)
-            print(f"  🏁 {root_id} COMPLETE", flush=True)
-
-    gate_stop = asyncio.Event()
-    gate_task = asyncio.create_task(_toggle_slow_gate(resources, gate_stop))
+    gate_task = asyncio.create_task(
+        _toggle_slow_gate(resources=resources, stop_event=stop_event, interval=args.gate_interval)
+    )
 
     try:
         await run(
@@ -316,13 +496,13 @@ async def _run_pipeline(args: argparse.Namespace) -> int:
             resources=resources,
             dispatch=dispatch,
             max_workers=args.max_workers,
-            max_active_roots=3,
+            max_active_roots=args.max_active_roots,
+            idle_poll=0.05,
+            stop_event=stop_event,
+            on_task_done=_refresh_and_report_roots,
         )
-    except KeyboardInterrupt:
-        pending = _pending_total(conn)
-        print(f"Interrupted. Pending tasks: {pending}. Resume with --resume", flush=True)
     finally:
-        gate_stop.set()
+        stop_event.set()
         gate_task.cancel()
         try:
             await gate_task
@@ -331,24 +511,29 @@ async def _run_pipeline(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
-    pending = _pending_total(conn)
-    if pending == 0:
-        print("✅ All roots complete.", flush=True)
+    remaining = _unfinished_work_count(db_path)
+    if remaining == 0:
+        print("✅ All work complete.", flush=True)
     else:
-        print(f"Run paused with {pending} tasks remaining. Use --resume.", flush=True)
+        print(f"⚠ Run paused with {remaining} unfinished tasks. Resume with --resume", flush=True)
 
+    await _post_run_report(checkpoint_backend, cleanup=args.cleanup)
     return 0
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="DFSS pipeline demo (upfront workflow shape)")
+    parser = argparse.ArgumentParser(description="DFSS pipeline demo using FlatMachines + SQLite backends")
     parser.add_argument("--roots", type=int, default=8)
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--max-depth", type=int, default=3)
     parser.add_argument("--max-workers", type=int, default=4)
+    parser.add_argument("--max-active-roots", type=int, default=3)
+    parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument("--db-path", type=str, default="data/dfss.sqlite")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--fail-rate", type=float, default=0.15)
-    parser.add_argument("--db-path", type=str, default="data/dfss.sqlite")
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--gate-interval", type=float, default=0.8)
+    parser.add_argument("--cleanup", action="store_true")
     return parser.parse_args()
 
 
