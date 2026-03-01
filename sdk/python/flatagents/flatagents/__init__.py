@@ -49,6 +49,20 @@ from .monitoring import (
     AgentMonitor,
     track_operation,
 )
+from .tools import (
+    ToolResult,
+    ToolProvider,
+    SimpleToolProvider,
+)
+from .tool_loop import (
+    ToolLoopAgent,
+    Tool,
+    Guardrails,
+    ToolLoopResult,
+    AggregateUsage,
+    StopReason,
+    SteeringProvider,
+)
 # Provider-specific utilities
 from .providers import (
     CerebrasRateLimits,
@@ -113,4 +127,15 @@ __all__ = [
     # Model Profiles
     "ProfileManager",
     "resolve_model_config",
+    # Tool Use
+    "ToolResult",
+    "ToolProvider",
+    "SimpleToolProvider",
+    "ToolLoopAgent",
+    "Tool",
+    "Guardrails",
+    "ToolLoopResult",
+    "AggregateUsage",
+    "StopReason",
+    "SteeringProvider",
 ]

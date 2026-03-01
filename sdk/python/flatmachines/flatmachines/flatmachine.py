@@ -12,7 +12,8 @@ import importlib
 import json
 import os
 import re
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, List, Optional
 
 try:
     from jinja2 import Template
@@ -104,6 +105,7 @@ class FlatMachine:
         agent_registry: Optional[AgentAdapterRegistry] = None,
         agent_adapters: Optional[list] = None,
         profiles_file: Optional[str] = None,
+        tool_provider=None,
         **kwargs
     ):
         """
@@ -122,6 +124,7 @@ class FlatMachine:
             agent_registry: Registry of agent adapters (optional)
             agent_adapters: List of agent adapters to register (optional)
             profiles_file: Optional profiles.yml path for adapters that use it
+            tool_provider: Default ToolProvider for tool_loop states (optional)
             **kwargs: Override config values
         """
         if Template is None:
@@ -203,6 +206,12 @@ class FlatMachine:
         self.signal_backend = signal_backend
         self.trigger_backend = trigger_backend or NoOpTrigger()
 
+        # Tool provider for tool_loop states
+        self._tool_provider = tool_provider
+
+        # Current step counter (used by tool loop for checkpoints)
+        self._current_step = 0
+
         # Pending launches (outbox pattern)
         self._pending_launches: list[LaunchIntent] = []
 
@@ -261,7 +270,7 @@ class FlatMachine:
             self.lock = NoOpLock()
             
         # Checkpoint events (default set)
-        default_events = ['machine_start', 'state_enter', 'execute', 'state_exit', 'machine_end', 'waiting']
+        default_events = ['machine_start', 'state_enter', 'execute', 'state_exit', 'machine_end', 'waiting', 'tool_call']
         self.checkpoint_events = set(p_config.get('checkpoint_on', default_events))
 
 
@@ -1087,29 +1096,34 @@ class FlatMachine:
         # 4. Handle 'agent' (LLM execution)
         agent_name = state.get('agent')
         if agent_name:
-            executor = self._get_executor(agent_name)
-            input_spec = state.get('input', {})
-            variables = {"context": context, "input": context}
-            agent_input = self._render_dict(input_spec, variables)
+            if state.get('tool_loop'):
+                context, output = await self._execute_tool_loop(
+                    state_name, state, agent_name, context
+                )
+            else:
+                executor = self._get_executor(agent_name)
+                input_spec = state.get('input', {})
+                variables = {"context": context, "input": context}
+                agent_input = self._render_dict(input_spec, variables)
 
-            execution_config = state.get('execution')
-            execution_type = get_execution_type(execution_config)
-            result = await execution_type.execute(executor, agent_input, context=context)
-            agent_result = coerce_agent_result(result)
+                execution_config = state.get('execution')
+                execution_type = get_execution_type(execution_config)
+                result = await execution_type.execute(executor, agent_input, context=context)
+                agent_result = coerce_agent_result(result)
 
-            if agent_result.error:
-                err = agent_result.error
-                raise RuntimeError(f"{err.get('type', 'AgentError')}: {err.get('message', 'unknown')}")
+                if agent_result.error:
+                    err = agent_result.error
+                    raise RuntimeError(f"{err.get('type', 'AgentError')}: {err.get('message', 'unknown')}")
 
-            output = agent_result.output_payload()
+                output = agent_result.output_payload()
 
-            self._accumulate_agent_metrics(agent_result)
+                self._accumulate_agent_metrics(agent_result)
 
-            output_mapping = state.get('output_to_context', {})
-            if output_mapping:
-                variables = {"context": context, "output": output, "input": context}
-                for ctx_key, template in output_mapping.items():
-                    context[ctx_key] = self._render_template(template, variables)
+                output_mapping = state.get('output_to_context', {})
+                if output_mapping:
+                    variables = {"context": context, "output": output, "input": context}
+                    for ctx_key, template in output_mapping.items():
+                        context[ctx_key] = self._render_template(template, variables)
 
         # Handle final state output
         if state.get('type') == 'final':
@@ -1117,6 +1131,427 @@ class FlatMachine:
             if output_spec:
                 variables = {"context": context}
                 output = self._render_dict(output_spec, variables)
+
+        return context, output
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Tool Loop
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _resolve_tool_provider(self, state_name: str):
+        """Resolve ToolProvider: hooks first, then constructor default."""
+        provider = self._hooks.get_tool_provider(state_name)
+        if provider is not None:
+            return provider
+        return self._tool_provider
+
+    def _resolve_tool_definitions(self, agent_name: str, tool_provider) -> List[Dict[str, Any]]:
+        """Merge tool definitions from provider and agent YAML config.
+
+        Provider definitions override YAML definitions (matched by name).
+        """
+        # Get definitions from provider
+        provider_defs: List[Dict[str, Any]] = []
+        if tool_provider is not None:
+            provider_defs = tool_provider.get_tool_definitions() or []
+
+        # Get definitions from agent YAML config
+        agent_config = self._get_agent_config(agent_name)
+        yaml_defs: List[Dict[str, Any]] = []
+        if agent_config:
+            yaml_defs = agent_config.get("data", {}).get("tools", []) or []
+
+        if not provider_defs:
+            return yaml_defs
+        if not yaml_defs:
+            return provider_defs
+
+        # Merge: provider overrides YAML by function name
+        provider_names = set()
+        for d in provider_defs:
+            fn = d.get("function", {})
+            if fn.get("name"):
+                provider_names.add(fn["name"])
+
+        merged = list(provider_defs)
+        for d in yaml_defs:
+            fn = d.get("function", {})
+            if fn.get("name") not in provider_names:
+                merged.append(d)
+
+        return merged
+
+    def _get_agent_config(self, agent_name: str) -> Optional[Dict[str, Any]]:
+        """Get the raw agent config dict for an agent name."""
+        agents_map = self.data.get("agents", {})
+        ref = agents_map.get(agent_name)
+        if ref is None:
+            return None
+        if isinstance(ref, dict):
+            # Inline config or typed ref
+            if ref.get("spec") == "flatagent":
+                return ref
+            if "config" in ref and isinstance(ref["config"], dict):
+                return ref["config"]
+        # String path — load from file
+        if isinstance(ref, str):
+            config_path = os.path.join(self._config_dir, ref)
+            if os.path.exists(config_path):
+                if yaml is not None:
+                    with open(config_path, 'r') as f:
+                        return yaml.safe_load(f)
+        return None
+
+    def _render_guardrail(self, value, variables: Dict[str, Any], target_type: type):
+        """Render a guardrail value through Jinja2 if it's a template string."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            rendered = self._render_template(value, variables)
+            return target_type(rendered)
+        return target_type(value)
+
+    def _build_assistant_message(self, result: AgentResult) -> Dict[str, Any]:
+        """Build an assistant message dict from AgentResult for chain continuation."""
+        msg: Dict[str, Any] = {"role": "assistant", "content": result.content or ""}
+        if result.tool_calls:
+            msg["tool_calls"] = [
+                {
+                    "id": tc.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": tc.get("name", ""),
+                        "arguments": json.dumps(tc.get("arguments", {}))
+                            if not isinstance(tc.get("arguments"), str)
+                            else tc.get("arguments", "{}"),
+                    },
+                }
+                for tc in result.tool_calls
+            ]
+        return msg
+
+    def _find_conditional_transition(
+        self,
+        state_name: str,
+        context: Dict[str, Any],
+    ) -> Optional[str]:
+        """Evaluate only conditional transitions. Used mid-tool-loop.
+
+        Unconditional transitions (no ``condition`` field) are skipped —
+        they are the natural exit path, evaluated only when the loop completes.
+        """
+        state = self.states.get(state_name, {})
+        transitions = state.get('transitions', [])
+
+        for transition in transitions:
+            condition = transition.get('condition')
+            to_state = transition.get('to')
+
+            if not condition or not to_state:
+                continue  # Skip unconditional transitions
+
+            if self._evaluate_condition(condition, context):
+                return to_state
+
+        return None
+
+    def _extract_cost(self, result: AgentResult) -> float:
+        """Extract cost from an AgentResult for local loop tracking."""
+        if result.cost is not None:
+            if isinstance(result.cost, (int, float)):
+                return float(result.cost)
+            if isinstance(result.cost, dict):
+                total = result.cost.get("total")
+                if isinstance(total, (int, float)):
+                    return float(total)
+        # Fallback: check usage dict
+        usage = result.usage or {}
+        if isinstance(usage, dict):
+            cost = usage.get("cost")
+            if isinstance(cost, (int, float)):
+                return float(cost)
+            if isinstance(cost, dict):
+                total = cost.get("total")
+                if isinstance(total, (int, float)):
+                    return float(total)
+        return 0.0
+
+    async def _execute_tool_loop(
+        self,
+        state_name: str,
+        state: Dict[str, Any],
+        agent_name: str,
+        context: Dict[str, Any],
+    ) -> tuple:
+        """
+        Execute an agent in tool-loop mode.
+
+        Each tool call is an individually checkpointed step:
+        1. Call agent via execute_with_tools (with tools + message chain)
+        2. If agent returns tool_calls:
+           a. Fire on_tool_calls hook (once per LLM response)
+           b. For EACH tool call in the response:
+              i.   Execute tool via ToolProvider
+              ii.  Append result to chain
+              iii. Fire on_tool_result hook
+              iv.  Checkpoint with tool_loop_state
+              v.   Evaluate conditional transitions — if any match, EXIT
+           c. Check guardrails (max_turns, max_tool_calls, cost)
+           d. Go to step 1
+        3. If agent returns content (no tool_calls):
+           a. Loop is done. Return output for normal transition evaluation.
+
+        Returns:
+            Tuple of (updated_context, output_dict)
+        """
+        # Parse guardrails from state config — Jinja2 templates supported
+        loop_config = state.get('tool_loop', {})
+        if isinstance(loop_config, bool):
+            loop_config = {}
+
+        variables = {"context": context, "input": context}
+        max_turns = self._render_guardrail(loop_config.get('max_turns', 20), variables, int)
+        max_tool_calls = self._render_guardrail(loop_config.get('max_tool_calls', 50), variables, int)
+        tool_timeout = self._render_guardrail(loop_config.get('tool_timeout', 30.0), variables, float)
+        total_timeout = self._render_guardrail(loop_config.get('total_timeout', 600.0), variables, float)
+        max_cost = self._render_guardrail(loop_config.get('max_cost'), variables, float)
+        allowed_tools = set(loop_config.get('allowed_tools', []))
+        denied_tools = set(loop_config.get('denied_tools', []))
+
+        # Get agent executor — must support execute_with_tools
+        executor = self._get_executor(agent_name)
+        try:
+            # Check capability
+            executor.execute_with_tools
+        except AttributeError:
+            adapter_type = type(executor).__name__
+            raise RuntimeError(
+                f"Agent '{agent_name}' ({adapter_type}) does not support "
+                f"machine-driven tool loops. Implement execute_with_tools "
+                f"on the adapter or remove tool_loop from state '{state_name}'."
+            )
+
+        # Get tool provider
+        tool_provider = self._resolve_tool_provider(state_name)
+
+        # Resolve tool definitions
+        tool_defs = self._resolve_tool_definitions(agent_name, tool_provider)
+
+        # Build initial input
+        input_spec = state.get('input', {})
+        variables = {"context": context, "input": context}
+        agent_input = self._render_dict(input_spec, variables)
+
+        # State for the loop
+        chain: List[Dict[str, Any]] = []
+        turns = 0
+        tool_calls_count = 0
+        loop_cost = 0.0
+        start_time = time.monotonic()
+        last_content: Optional[str] = None
+
+        while True:
+            # --- Guardrail checks ---
+            if time.monotonic() - start_time >= total_timeout:
+                context['_tool_loop_stop'] = 'timeout'
+                break
+            if turns >= max_turns:
+                context['_tool_loop_stop'] = 'max_turns'
+                break
+            if max_cost is not None and loop_cost >= max_cost:
+                context['_tool_loop_stop'] = 'cost_limit'
+                break
+
+            # --- Call agent via execute_with_tools ---
+            if turns == 0:
+                result = await executor.execute_with_tools(
+                    input_data=agent_input,
+                    tools=tool_defs,
+                    messages=None,
+                    context=context,
+                )
+            else:
+                result = await executor.execute_with_tools(
+                    input_data={},
+                    tools=tool_defs,
+                    messages=chain,
+                    context=context,
+                )
+
+            turns += 1
+            self._accumulate_agent_metrics(result)
+            loop_cost += self._extract_cost(result)
+
+            # Update context with loop metadata
+            context['_tool_loop_turns'] = turns
+            context['_tool_loop_cost'] = loop_cost
+            context['_tool_calls_count'] = tool_calls_count
+
+            # --- Handle error ---
+            if result.error:
+                raise RuntimeError(
+                    f"{result.error.get('type', 'AgentError')}: "
+                    f"{result.error.get('message', 'unknown')}"
+                )
+
+            # --- Seed chain on first turn ---
+            if turns == 1 and result.rendered_user_prompt:
+                chain.append({"role": "user", "content": result.rendered_user_prompt})
+
+            # --- Build assistant message and append to chain ---
+            assistant_msg = self._build_assistant_message(result)
+            chain.append(assistant_msg)
+            last_content = result.content
+
+            # --- No tool calls = loop complete ---
+            if result.finish_reason != "tool_use":
+                break
+
+            pending_calls = result.tool_calls or []
+
+            # --- Guardrail: tool call count ---
+            if tool_calls_count + len(pending_calls) > max_tool_calls:
+                context['_tool_loop_stop'] = 'max_tool_calls'
+                break
+
+            # --- HOOK: on_tool_calls (once per LLM response) ---
+            context = await self._run_hook(
+                'on_tool_calls', state_name, pending_calls, context,
+            )
+
+            if context.get('_abort_tool_loop'):
+                context['_tool_loop_stop'] = 'aborted'
+                break
+
+            # --- Execute tools ONE AT A TIME with per-tool hooks + checkpoints ---
+            skip_tools = set(context.pop('_skip_tools', []))
+
+            for tc in pending_calls:
+                tc_name = tc.get('name') or tc.get('tool')
+                tc_id = tc.get('id')
+                tc_args = tc.get('arguments', {})
+
+                # Skip if hook requested
+                if tc_id in skip_tools or tc_name in skip_tools:
+                    chain.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": f"Tool '{tc_name}' was skipped by policy.",
+                    })
+                    continue
+
+                # Check allow/deny
+                if denied_tools and tc_name in denied_tools:
+                    chain.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": f"Tool '{tc_name}' is not allowed.",
+                    })
+                    continue
+                if allowed_tools and tc_name not in allowed_tools:
+                    chain.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": f"Tool '{tc_name}' is not allowed.",
+                    })
+                    continue
+
+                # Execute single tool
+                if tool_provider is not None:
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            tool_provider.execute_tool(tc_name, tc_id, tc_args),
+                            timeout=tool_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        from flatagents.tools import ToolResult as _ToolResult
+                        tool_result = _ToolResult(
+                            content=f"Tool '{tc_name}' timed out after {tool_timeout}s",
+                            is_error=True,
+                        )
+                    except Exception as e:
+                        from flatagents.tools import ToolResult as _ToolResult
+                        tool_result = _ToolResult(
+                            content=f"Error executing '{tc_name}': {e}",
+                            is_error=True,
+                        )
+                else:
+                    from flatagents.tools import ToolResult as _ToolResult
+                    tool_result = _ToolResult(
+                        content=f"No tool provider configured for '{tc_name}'",
+                        is_error=True,
+                    )
+
+                tool_calls_count += 1
+
+                tool_result_dict = {
+                    "tool_call_id": tc_id,
+                    "name": tc_name,
+                    "arguments": tc_args,
+                    "content": tool_result.content,
+                    "is_error": tool_result.is_error,
+                }
+
+                chain.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": tool_result.content,
+                })
+
+                context['_tool_calls_count'] = tool_calls_count
+
+                # --- HOOK: on_tool_result (per tool call) ---
+                context = await self._run_hook(
+                    'on_tool_result', state_name, tool_result_dict, context,
+                )
+
+                # --- Checkpoint after each tool call ---
+                await self._save_checkpoint(
+                    'tool_call', state_name, self._current_step, context,
+                    tool_loop_state={
+                        "chain": chain,
+                        "turns": turns,
+                        "tool_calls_count": tool_calls_count,
+                        "loop_cost": loop_cost,
+                    },
+                )
+
+                # --- Evaluate conditional transitions after each tool call ---
+                if context.get('_abort_tool_loop'):
+                    context['_tool_loop_stop'] = 'aborted'
+                    break
+
+                next_state = self._find_conditional_transition(state_name, context)
+                if next_state is not None:
+                    context['_tool_loop_stop'] = 'transition'
+                    context['_tool_loop_next_state'] = next_state
+                    break
+
+            # Check if inner loop broke out
+            if context.get('_tool_loop_stop'):
+                break
+
+            # --- Inject steering messages from hook ---
+            steering = context.pop('_steering_messages', None)
+            if steering:
+                for msg in steering:
+                    chain.append(msg)
+
+        # --- Build output ---
+        output = {
+            "content": last_content,
+            "_tool_calls_count": tool_calls_count,
+            "_tool_loop_turns": turns,
+            "_tool_loop_cost": loop_cost,
+            "_tool_loop_stop": context.get('_tool_loop_stop', 'complete'),
+        }
+
+        # Apply output_to_context mapping
+        output_mapping = state.get('output_to_context', {})
+        if output_mapping:
+            variables = {"context": context, "output": output, "input": context}
+            for ctx_key, template in output_mapping.items():
+                context[ctx_key] = self._render_template(template, variables)
 
         return context, output
 
@@ -1155,6 +1590,7 @@ class FlatMachine:
         context: Dict[str, Any],
         output: Optional[Dict[str, Any]] = None,
         waiting_channel: Optional[str] = None,
+        tool_loop_state: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Save a checkpoint if configured."""
         if event not in self.checkpoint_events:
@@ -1174,6 +1610,7 @@ class FlatMachine:
             parent_execution_id=self.parent_execution_id,
             pending_launches=self._get_pending_intents() if self._pending_launches else None,
             waiting_channel=waiting_channel,
+            tool_loop_state=tool_loop_state,
         )
 
         manager = CheckpointManager(self.persistence, self.execution_id)
@@ -1242,6 +1679,7 @@ class FlatMachine:
                     hit_agent_limit = True
                     break
                 step += 1
+                self._current_step = step
                 is_final = current_state in self._final_states
 
                 await self._save_checkpoint('state_enter', current_state, step, context)
@@ -1295,7 +1733,11 @@ class FlatMachine:
                     logger.info(f"Reached final state: {current_state}")
                     break
 
-                next_state = self._find_next_state(current_state, context)
+                if '_tool_loop_next_state' in context:
+                    next_state = context.pop('_tool_loop_next_state')
+                    context.pop('_tool_loop_stop', None)
+                else:
+                    next_state = self._find_next_state(current_state, context)
                 
                 if next_state:
                     next_state = await self._run_hook('on_transition', current_state, next_state, context)

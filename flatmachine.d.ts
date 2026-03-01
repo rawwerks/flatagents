@@ -369,7 +369,7 @@ export interface StateDefinition {
   output_to_context?: Record<string, any>;
   output?: Record<string, any>;
   transitions?: Transition[];
-  tool_loop?: boolean;
+  tool_loop?: boolean | ToolLoopStateConfig;
   sampling?: "single" | "multi";
   foreach?: string;
   as?: string;
@@ -378,6 +378,16 @@ export interface StateDefinition {
   timeout?: number;
   launch?: string | string[];
   launch_input?: Record<string, any>;
+}
+
+export interface ToolLoopStateConfig {
+  max_tool_calls?: number;     // Total tool calls before forced stop. Default: 50
+  max_turns?: number;          // LLM call rounds before forced stop. Default: 20
+  allowed_tools?: string[];    // Whitelist (if set, only these execute)
+  denied_tools?: string[];     // Blacklist (takes precedence over allowed)
+  tool_timeout?: number;       // Per-tool execution timeout in seconds. Default: 30
+  total_timeout?: number;      // Total loop timeout in seconds. Default: 600
+  max_cost?: number;           // Cost limit in dollars
 }
 
 export interface MachineInput {
@@ -426,6 +436,12 @@ export interface MachineSnapshot {
   parent_execution_id?: string;
   pending_launches?: LaunchIntent[];
   waiting_channel?: string;
+  tool_loop_state?: {
+    chain: Array<Record<string, any>>;
+    turns: number;
+    tool_calls_count: number;
+    loop_cost: number;
+  };
 }
 
 export interface PersistenceConfig {

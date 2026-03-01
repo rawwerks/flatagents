@@ -166,6 +166,16 @@ export interface AgentData {
   instruction_suffix?: string;
   output?: OutputSchema;
   mcp?: MCPConfig;
+  tools?: ToolDefinition[];
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, any>;
+  };
 }
 
 export interface MCPConfig {

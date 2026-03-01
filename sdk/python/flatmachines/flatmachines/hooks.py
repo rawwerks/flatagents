@@ -160,6 +160,67 @@ class MachineHooks(ABC):
         logger.warning(f"Unhandled action: {action_name}")
         return context
 
+    def on_tool_calls(
+        self,
+        state_name: str,
+        tool_calls: list,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Called BEFORE tool execution in a tool_loop state.
+
+        Fires once per LLM response that contains tool calls.
+        ``tool_calls`` is the list of tool call requests from the LLM.
+
+        Use cases:
+        - Log/audit what tools the LLM is calling
+        - Inject data into context for transition evaluation
+        - Set context['_abort_tool_loop'] = True to stop the loop
+        - Set context['_skip_tools'] = ['tool_call_id'] to skip specific calls
+
+        Args:
+            state_name: Current state name
+            tool_calls: List of tool call dicts: [{id, name, arguments}, ...]
+            context: Current context
+
+        Returns:
+            Modified context
+        """
+        return context
+
+    def on_tool_result(
+        self,
+        state_name: str,
+        tool_result: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Called AFTER each individual tool execution.
+
+        Fires once per tool call — if the LLM requested 3 tools,
+        this fires 3 times. A checkpoint is saved after each call,
+        enabling rewind to any specific tool execution point.
+
+        Use cases:
+        - Inspect result for safety/compliance
+        - Update context based on tool output (e.g., track modified files)
+        - Inject steering messages via context['_steering_messages']
+        - Set context['_abort_tool_loop'] = True to stop before next tool
+
+        Args:
+            state_name: Current state name
+            tool_result: Result dict: {tool_call_id, name, arguments, content, is_error}
+            context: Current context
+
+        Returns:
+            Modified context
+        """
+        return context
+
+    def get_tool_provider(self, state_name: str):
+        """Return tool provider for a state. None = use machine default."""
+        return None
+
 
 class LoggingHooks(MachineHooks):
     """Hooks that log all state transitions."""
@@ -191,6 +252,18 @@ class LoggingHooks(MachineHooks):
     def on_transition(self, from_state: str, to_state: str, context: Dict[str, Any]) -> str:
         logger.log(self.log_level, f"Transition: {from_state} -> {to_state}")
         return to_state
+
+    def on_tool_calls(self, state_name: str, tool_calls: list, context: Dict[str, Any]) -> Dict[str, Any]:
+        tool_names = [tc.get("name", "?") for tc in tool_calls]
+        logger.log(self.log_level, f"Tool calls in {state_name}: {tool_names}")
+        return context
+
+    def on_tool_result(self, state_name: str, tool_result: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        name = tool_result.get("name", "?")
+        is_error = tool_result.get("is_error", False)
+        status = "ERROR" if is_error else "OK"
+        logger.log(self.log_level, f"Tool result in {state_name}: {name} [{status}]")
+        return context
 
 
 class MetricsHooks(MachineHooks):
@@ -273,6 +346,23 @@ class CompositeHooks(MachineHooks):
         for hook in self.hooks:
             context = hook.on_action(action_name, context)
         return context
+
+    def on_tool_calls(self, state_name: str, tool_calls: list, context: Dict[str, Any]) -> Dict[str, Any]:
+        for hook in self.hooks:
+            context = hook.on_tool_calls(state_name, tool_calls, context)
+        return context
+
+    def on_tool_result(self, state_name: str, tool_result: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        for hook in self.hooks:
+            context = hook.on_tool_result(state_name, tool_result, context)
+        return context
+
+    def get_tool_provider(self, state_name: str):
+        for hook in self.hooks:
+            provider = hook.get_tool_provider(state_name)
+            if provider is not None:
+                return provider
+        return None
 
 
 class WebhookHooks(MachineHooks):
@@ -367,6 +457,18 @@ class WebhookHooks(MachineHooks):
 
     async def on_action(self, action_name: str, context: Dict[str, Any]) -> Dict[str, Any]:
         resp = await self._send("action", {"action": action_name, "context": context})
+        if resp and "context" in resp:
+            return resp["context"]
+        return context
+
+    async def on_tool_calls(self, state_name: str, tool_calls: list, context: Dict[str, Any]) -> Dict[str, Any]:
+        resp = await self._send("tool_calls", {"state": state_name, "tool_calls": tool_calls, "context": context})
+        if resp and "context" in resp:
+            return resp["context"]
+        return context
+
+    async def on_tool_result(self, state_name: str, tool_result: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        resp = await self._send("tool_result", {"state": state_name, "tool_result": tool_result, "context": context})
         if resp and "context" in resp:
             return resp["context"]
         return context

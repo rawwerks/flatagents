@@ -33,6 +33,8 @@ class MachineSnapshot:
     pending_launches: Optional[List[Dict[str, Any]]] = None  # LaunchIntent dicts awaiting completion
     # External signals (v1.2.0)
     waiting_channel: Optional[str] = None  # Signal channel this machine is blocked on
+    # Tool loop state (v1.2.0)
+    tool_loop_state: Optional[Dict[str, Any]] = None  # {chain, turns, tool_calls_count, loop_cost}
 
 class PersistenceBackend(ABC):
     """Abstract storage backend for checkpoints."""

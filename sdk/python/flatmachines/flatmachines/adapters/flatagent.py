@@ -62,18 +62,9 @@ class FlatAgentExecutor(AgentExecutor):
     def metadata(self) -> Dict[str, Any]:
         return getattr(self._agent, "metadata", {})
 
-    async def execute(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentResult:
-        pre_calls = self._agent.total_api_calls
-        pre_cost = self._agent.total_cost
-
-        response = await self._agent.call(**input_data)
-
-        delta_calls = self._agent.total_api_calls - pre_calls
-        delta_cost = self._agent.total_cost - pre_cost
+    def _map_response(self, response, delta_calls: int, delta_cost: float) -> AgentResult:
+        """Map a FlatAgent AgentResponse to a FlatMachines AgentResult."""
+        from typing import List as _List
 
         # Build usage info
         usage: Optional[UsageInfo] = None
@@ -88,7 +79,7 @@ class FlatAgentExecutor(AgentExecutor):
             }
         elif delta_calls:
             usage = {"api_calls": delta_calls}
-        
+
         # Build cost info
         cost: Optional[CostInfo] = None
         if response.usage and response.usage.cost:
@@ -101,7 +92,7 @@ class FlatAgentExecutor(AgentExecutor):
             }
         elif delta_cost:
             cost = {"total": delta_cost}
-        
+
         # Build error info
         error: Optional[AgentErrorDict] = None
         if response.error:
@@ -113,16 +104,16 @@ class FlatAgentExecutor(AgentExecutor):
             }
             if response.error.status_code:
                 error["status_code"] = response.error.status_code
-        
+
         # Build rate limit state
         rate_limit: Optional[RateLimitState] = None
         raw_headers: Dict[str, str] = {}
         if response.rate_limit:
             raw_headers = response.rate_limit.raw_headers or {}
             retry_after = response.rate_limit.retry_after
-            
+
             rate_limit = build_rate_limit_state(raw_headers, retry_after)
-            
+
             # Also check the normalized fields if windows didn't find anything
             if not rate_limit.get("windows"):
                 if response.rate_limit.remaining_requests is not None or \
@@ -144,11 +135,11 @@ class FlatAgentExecutor(AgentExecutor):
                         })
                     if windows:
                         rate_limit["windows"] = windows
-            
+
             # Update limited flag from normalized fields if not set by windows
             if not rate_limit["limited"]:
                 rate_limit["limited"] = response.rate_limit.is_limited()
-        
+
         # Build provider data
         provider_data: Optional[ProviderData] = {
             "provider": getattr(self._agent, "provider", None),
@@ -160,14 +151,22 @@ class FlatAgentExecutor(AgentExecutor):
         provider_data = {k: v for k, v in provider_data.items() if v is not None}
         if not provider_data:
             provider_data = None
-        
+
         # Map finish reason
         finish_reason: Optional[str] = None
         if response.finish_reason:
             finish_reason = response.finish_reason.value
         elif response.error:
             finish_reason = "error"
-        
+
+        # Map tool_calls from ToolCall objects to plain dicts
+        tool_calls = None
+        if response.tool_calls:
+            tool_calls = [
+                {"id": tc.id, "name": tc.tool, "arguments": tc.arguments}
+                for tc in response.tool_calls
+            ]
+
         return AgentResult(
             output=response.output,
             content=response.content,
@@ -179,7 +178,45 @@ class FlatAgentExecutor(AgentExecutor):
             error=error,
             rate_limit=rate_limit,
             provider_data=provider_data,
+            tool_calls=tool_calls,
+            rendered_user_prompt=getattr(response, "rendered_user_prompt", None),
         )
+
+    async def execute(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AgentResult:
+        pre_calls = self._agent.total_api_calls
+        pre_cost = self._agent.total_cost
+
+        response = await self._agent.call(**input_data)
+
+        delta_calls = self._agent.total_api_calls - pre_calls
+        delta_cost = self._agent.total_cost - pre_cost
+
+        return self._map_response(response, delta_calls, delta_cost)
+
+    async def execute_with_tools(
+        self,
+        input_data: Dict[str, Any],
+        tools: list,
+        messages: Optional[list] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AgentResult:
+        pre_calls = self._agent.total_api_calls
+        pre_cost = self._agent.total_cost
+
+        response = await self._agent.call(
+            tools=tools,
+            messages=messages,
+            **input_data,
+        )
+
+        delta_calls = self._agent.total_api_calls - pre_calls
+        delta_cost = self._agent.total_cost - pre_cost
+
+        return self._map_response(response, delta_calls, delta_cost)
 
 
 class FlatAgentAdapter(AgentAdapter):

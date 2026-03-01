@@ -108,6 +108,10 @@ class AgentResult:
     # Provider-specific data (includes raw_headers when available)
     provider_data: Optional[ProviderData] = None
 
+    # Tool use fields
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    rendered_user_prompt: Optional[str] = None
+
     @property
     def success(self) -> bool:
         """Whether the agent call succeeded (no error)."""
@@ -131,6 +135,30 @@ class AgentExecutor(Protocol):
         context: Optional[Dict[str, Any]] = None,
     ) -> AgentResult:
         ...
+
+    async def execute_with_tools(
+        self,
+        input_data: Dict[str, Any],
+        tools: List[Dict[str, Any]],
+        messages: Optional[List[Dict[str, Any]]] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AgentResult:
+        """
+        Execute a single LLM call with tool definitions and optional
+        conversation chain. Used by the machine's tool loop.
+
+        Args:
+            input_data: Input for template rendering (first call only)
+            tools: Tool definitions in OpenAI function-calling format
+            messages: Conversation chain for continuation (subsequent calls)
+            context: Machine context (read-only, for adapter use)
+
+        Returns:
+            AgentResult with tool_calls populated if LLM requested tools,
+            finish_reason="tool_use" when tools requested,
+            rendered_user_prompt on first call for chain seeding.
+        """
+        raise NotImplementedError
 
     @property
     def metadata(self) -> Dict[str, Any]:  # Optional metadata for execution strategies
@@ -238,7 +266,8 @@ def coerce_agent_result(value: Any) -> AgentResult:
     if isinstance(value, dict):
         # Check if this looks like an AgentResult dict (has known fields)
         known_fields = {"output", "content", "raw", "usage", "cost", "metadata",
-                        "finish_reason", "error", "rate_limit", "provider_data"}
+                        "finish_reason", "error", "rate_limit", "provider_data",
+                        "tool_calls", "rendered_user_prompt"}
         if any(k in value for k in known_fields):
             return AgentResult(
                 output=value.get("output"),
@@ -251,6 +280,8 @@ def coerce_agent_result(value: Any) -> AgentResult:
                 error=value.get("error"),
                 rate_limit=value.get("rate_limit"),
                 provider_data=value.get("provider_data"),
+                tool_calls=value.get("tool_calls"),
+                rendered_user_prompt=value.get("rendered_user_prompt"),
             )
         # Otherwise treat as output dict
         return AgentResult(output=value, raw=value)
