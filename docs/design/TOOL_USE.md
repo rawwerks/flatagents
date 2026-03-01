@@ -167,23 +167,38 @@ class ToolLoopAgent:
 - Human-in-the-loop (`wait_for`)
 - Composition with other states/machines
 
-### ToolLoopAgent Extension: Per-turn Injection Callback
+### ToolLoopAgent Extension: Per-turn Mutation Callback (internal)
 
-Current `run(**input_data)` semantics render templates from `input_data` on turn 0, then continue with the message chain. There is no first-class way to inject dynamic per-turn state (remaining budget, elapsed cost, steering context, etc.) without reimplementing the loop.
+Current `run(**input_data)` semantics render templates from `input_data` on turn 0, then continue with a private message chain. There is no first-class way to inject dynamic per-turn state (budget, elapsed cost, steering, tool policy) without reimplementing the loop.
 
-#### Proposed API (backward compatible)
+For this codebase (internal use, no external compatibility contract), expose a broad mutation seam.
+
+#### Proposed API
 
 ```python
 @dataclass
-class TurnState:
+class TurnContext:
+    # conversation + loop state (mutable)
+    messages: List[dict]
+    input_data: Dict[str, Any]
+
     turn: int
     total_tool_calls: int
     usage: AggregateUsage
+
     last_assistant_message: Optional[dict]
     last_tool_results: List[dict]
-    input_data: Dict[str, Any]
 
-OnTurnCallback = Callable[[TurnState], Optional[List[dict]] | Awaitable[Optional[List[dict]]]]
+    # optional mutable knobs
+    guardrails: Guardrails
+    allowed_tools: Optional[List[str]]
+    denied_tools: Optional[List[str]]
+    stop_reason: Optional[StopReason]
+
+OnTurnCallback = Callable[
+    [TurnContext],
+    Optional[TurnContext] | Awaitable[Optional[TurnContext]]
+]
 
 class ToolLoopAgent:
     def __init__(..., on_turn: Optional[OnTurnCallback] = None):
@@ -193,24 +208,19 @@ class ToolLoopAgent:
         ...
 ```
 
-#### Callback semantics
+#### Semantics
 
 - Called **after tool results are appended** and **before the next LLM call**.
-- Receives structured loop state (`turn`, `tool_calls`, aggregated `usage`, last assistant message, last tool results).
-- Returns additional messages to append to the chain (or `None`).
+- Callback may mutate `TurnContext` in place and return `None`, or return a replacement `TurnContext`.
 - Supports sync or async callbacks.
 - If both constructor-level and `run(...)` callback are provided, `run(...)` wins.
+- Keep only minimal runtime validation (message shape, non-negative counters, known stop reason values).
 
-#### Why this shape
+#### Notes
 
-- Solves dynamic steering/budget injection without template re-rendering.
-- Keeps `ToolLoopAgent` simple and composable.
-- Preserves current behavior when callback is not supplied.
-- Keeps `SteeringProvider` usable for static steering while enabling state-aware steering via callback.
-
-#### Deferred alternative
-
-A callable `input_data` refresh hook (re-rendering templates every turn) is possible but more complex and not needed for the primary use case. Start with message injection callback first.
+- This intentionally allows arbitrary state control per turn.
+- "Append-only messages" remains a subset pattern: callback can choose to only append to `messages`.
+- If stricter boundaries are desired later, we can layer a typed/limited callback on top.
 
 ---
 
