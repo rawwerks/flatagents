@@ -10,7 +10,6 @@ data:
     working_dir: "{{ input.working_dir }}"
     human_approved: false
     feedback: ""
-    iteration: 0
 
   agents:
     coder: ./agent.yml
@@ -34,11 +33,6 @@ data:
         feedback: "{{ context.feedback }}"
       output_to_context:
         result: "{{ output.content }}"
-        tool_calls: "{{ output._tool_calls_count }}"
-        turns: "{{ output._tool_loop_turns }}"
-        cost: "{{ output._tool_loop_cost }}"
-        stop_reason: "{{ output._tool_loop_stop }}"
-        iteration: "{{ context.iteration + 1 }}"
       transitions:
         - to: human_review
 
@@ -53,10 +47,6 @@ data:
       type: final
       output:
         result: "{{ context.result }}"
-        tool_calls: "{{ context.tool_calls }}"
-        turns: "{{ context.turns }}"
-        cost: "{{ context.cost }}"
-        iterations: "{{ context.iteration }}"
 
 metadata:
   description: "CLI coding agent with tool loop and human-in-the-loop review"

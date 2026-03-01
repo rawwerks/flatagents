@@ -17,25 +17,23 @@ import sys
 import warnings
 from pathlib import Path
 
-# Quiet by default — set LOG_LEVEL=INFO or LOG_LEVEL=DEBUG to see logs
-_log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
-logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
-logging.getLogger("flatagents").setLevel(_log_level)
-logging.getLogger("flatmachines").setLevel(_log_level)
-
 # Suppress validation warnings until schemas are regenerated
 warnings.filterwarnings("ignore", message=".*validation.*")
 warnings.filterwarnings("ignore", message=".*Flatmachine.*")
 warnings.filterwarnings("ignore", message=".*Flatagent.*")
 
-from flatmachines import FlatMachine, setup_logging, get_logger  # noqa: E402
+from flatmachines import FlatMachine  # noqa: E402
 from flatagents import FlatAgent  # noqa: E402
 from flatagents.tool_loop import ToolLoopAgent, Guardrails, StopReason  # noqa: E402
 
 from .hooks import CLIToolHooks  # noqa: E402
 from .tools import CLIToolProvider  # noqa: E402
 
-logger = get_logger(__name__)
+# Quiet by default — set LOG_LEVEL=INFO or LOG_LEVEL=DEBUG to see logs
+_log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
+logging.getLogger().setLevel(_log_level)
+for _name in ("flatagents", "flatmachines", "LiteLLM"):
+    logging.getLogger(_name).setLevel(_log_level)
 
 
 def _config_path(name: str) -> str:
@@ -54,20 +52,6 @@ async def run_machine(task: str, working_dir: str):
         "task": task,
         "working_dir": working_dir,
     })
-
-    print("=" * 60)
-    print("DONE")
-    print("=" * 60)
-    print(f"Stop reason: {result.get('stop_reason', 'unknown')}")
-    print(f"Tool calls:  {result.get('tool_calls', 0)}")
-    print(f"LLM turns:   {result.get('turns', 0)}")
-    print(f"Cost:        ${float(result.get('cost', 0)):.4f}")
-    print(f"API calls:   {machine.total_api_calls}")
-    print()
-
-    content = result.get("result", "")
-    if content:
-        print(content)
 
     return result
 
