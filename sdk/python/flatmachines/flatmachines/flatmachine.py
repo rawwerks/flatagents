@@ -1386,6 +1386,8 @@ class FlatMachine:
             context['_tool_loop_turns'] = turns
             context['_tool_loop_cost'] = loop_cost
             context['_tool_calls_count'] = tool_calls_count
+            context['_tool_loop_content'] = result.content
+            context['_tool_loop_usage'] = result.usage
 
             # --- Handle error ---
             if result.error:
