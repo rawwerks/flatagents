@@ -39,6 +39,7 @@
  * execution         - Execution type config: {type: "retry", backoffs: [...], jitter: 0.1}
  * on_error          - Error handling: "error_state" or {default: "...", ErrorType: "..."}
  * action            - Hook action to execute
+ * wait_for          - Channel to wait for external signal (Jinja2 template)
  * input             - Input mapping (Jinja2 templates)
  * output_to_context - Map agent output to context (Jinja2 templates)
  * output            - Final output (for final states)
@@ -54,6 +55,10 @@
  * timeout           - Timeout in seconds (0 = never)
  * launch            - Machine(s) to start fire-and-forget
  * launch_input      - Input for launched machines
+ *
+ * EXTERNAL SIGNALS (v1.2.0):
+ * --------------------------
+ * wait_for          - Channel name (Jinja2 template) to wait for external signal
  *
  * NOTE: Only `machine` supports parallel invocation (string[]), not `agent`.
  * Machines are self-healing with checkpoint/resume and error handling.
@@ -203,6 +208,35 @@
  *       transitions:
  *         - to: continue_immediately
  *
+ * WAIT_FOR (EXTERNAL SIGNAL) EXAMPLE:
+ * ------------------------------------
+ * Machine checkpoints and exits. Nothing running. Dispatcher resumes
+ * the machine when a signal arrives on the named channel.
+ * Signal data is available as output.* in output_to_context templates.
+ *
+ *   states:
+ *     wait_for_approval:
+ *       wait_for: "approval/{{ context.task_id }}"
+ *       timeout: 86400
+ *       output_to_context:
+ *         approved: "{{ output.approved }}"
+ *         reviewer: "{{ output.reviewer }}"
+ *       transitions:
+ *         - condition: "context.approved"
+ *           to: continue_work
+ *         - to: rejected
+ *
+ * QUOTA-GATED EXAMPLE:
+ * --------------------
+ *
+ *   states:
+ *     wait_for_quota:
+ *       wait_for: "quota/openai"
+ *       output_to_context:
+ *         quota_token: "{{ output }}"
+ *       transitions:
+ *         - to: call_api
+ *
  * PERSISTENCE (v0.2.0):
  * --------------------
  * MachineSnapshot    - Wire format for checkpoints (execution_id, state, context, step)
@@ -249,14 +283,39 @@
  * Launch intent for outbox pattern.
  * Recorded in checkpoint before launching to ensure exactly-once semantics.
  *
+ * HOOKS CONFIG:
+ * -------------
+ * Configuration for loading hooks from file or module.
+ *
+ * File-based (preferred for self-contained skills):
+ *   hooks:
+ *     file: "./hooks.py"
+ *     class: "MyHooks"
+ *     args:
+ *       working_dir: "."
+ *
+ * Module-based (for installed packages):
+ *   hooks:
+ *     module: "mypackage.hooks"
+ *     class: "MyHooks"
+ *     args:
+ *       api_key: "{{ input.api_key }}"
+ *
+ * Fields:
+ *   file   - Path to Python file containing hooks class (relative to machine.yml)
+ *   module - Python module path to import
+ *   class  - Class name to instantiate (required)
+ *   args   - Arguments to pass to hooks constructor
+ *
  * MACHINE SNAPSHOT:
  * -----------------
  * Wire format for checkpoints.
  * parent_execution_id - Lineage tracking (v0.4.0)
  * pending_launches    - Outbox pattern (v0.4.0)
+ * waiting_channel     - Signal channel this machine is blocked on (v1.2.0)
  */
 
-export const SPEC_VERSION = "1.1.1";
+export const SPEC_VERSION = "1.2.0";
 
 export interface MachineWrapper {
   spec: "flatmachine";
@@ -285,29 +344,6 @@ export interface AgentRefConfig {
 
 export type AgentRef = string | AgentWrapper | AgentRefConfig;
 
-/**
- * Configuration for loading hooks from file or module.
- *
- * File-based (preferred for self-contained skills):
- *   hooks:
- *     file: "./hooks.py"
- *     class: "MyHooks"
- *     args:
- *       working_dir: "."
- *
- * Module-based (for installed packages):
- *   hooks:
- *     module: "mypackage.hooks"
- *     class: "MyHooks"
- *     args:
- *       api_key: "{{ input.api_key }}"
- *
- * Fields:
- *   file   - Path to Python file containing hooks class (relative to machine.yml)
- *   module - Python module path to import
- *   class  - Class name to instantiate (required)
- *   args   - Arguments to pass to hooks constructor
- */
 export interface HooksConfig {
   file?: string;
   module?: string;
@@ -328,11 +364,12 @@ export interface StateDefinition {
   action?: string;
   execution?: ExecutionConfig;
   on_error?: string | Record<string, string>;
+  wait_for?: string;
   input?: Record<string, any>;
   output_to_context?: Record<string, any>;
   output?: Record<string, any>;
   transitions?: Transition[];
-  tool_loop?: boolean;
+  tool_loop?: boolean | ToolLoopStateConfig;
   sampling?: "single" | "multi";
   foreach?: string;
   as?: string;
@@ -341,6 +378,16 @@ export interface StateDefinition {
   timeout?: number;
   launch?: string | string[];
   launch_input?: Record<string, any>;
+}
+
+export interface ToolLoopStateConfig {
+  max_tool_calls?: number;     // Total tool calls before forced stop. Default: 50
+  max_turns?: number;          // LLM call rounds before forced stop. Default: 20
+  allowed_tools?: string[];    // Whitelist (if set, only these execute)
+  denied_tools?: string[];     // Blacklist (takes precedence over allowed)
+  tool_timeout?: number;       // Per-tool execution timeout in seconds. Default: 30
+  total_timeout?: number;      // Total loop timeout in seconds. Default: 600
+  max_cost?: number;           // Cost limit in dollars
 }
 
 export interface MachineInput {
@@ -388,6 +435,13 @@ export interface MachineSnapshot {
   total_cost?: number;
   parent_execution_id?: string;
   pending_launches?: LaunchIntent[];
+  waiting_channel?: string;
+  tool_loop_state?: {
+    chain: Array<Record<string, any>>;
+    turns: number;
+    tool_calls_count: number;
+    loop_cost: number;
+  };
 }
 
 export interface PersistenceConfig {

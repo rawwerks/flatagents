@@ -106,18 +106,14 @@ cd "$REPO_ROOT"
 UPDATED=0
 WOULD_UPDATE=0
 
-# Update file if it needs updating (pattern matches but not already at target)
+# Update file if pattern matches (sed is idempotent if already at target)
 update_file() {
     local file="$1"
     local pattern="$2"
     local replacement="$3"
-    # Escape dots for literal matching in version check
-    local escaped_version="${NEW_VERSION//./\\.}"
-    local target_check="${4:-$escaped_version}"
 
     [[ -f "$file" ]] || return
     rg -q "$pattern" "$file" 2>/dev/null || return  # Pattern not found
-    rg -q "$target_check" "$file" 2>/dev/null && return  # Already at target
 
     if [[ "$DRY_RUN" == true ]]; then
         echo "  Would update: $file"

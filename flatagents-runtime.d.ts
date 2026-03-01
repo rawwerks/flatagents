@@ -729,7 +729,7 @@ export interface BackendConfig {
     aws_region?: string;
 }
 
-export const SPEC_VERSION = "1.1.1";
+export const SPEC_VERSION = "1.2.0";
 
 export interface SDKRuntimeWrapper {
     spec: "flatagents-runtime";

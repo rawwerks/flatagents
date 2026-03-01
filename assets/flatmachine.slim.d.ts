@@ -1,4 +1,4 @@
-export const SPEC_VERSION = "1.1.1";
+export const SPEC_VERSION = "1.2.0";
 export interface MachineWrapper {
     spec: "flatmachine";
     spec_version: string;
@@ -40,11 +40,12 @@ export interface StateDefinition {
     action?: string;
     execution?: ExecutionConfig;
     on_error?: string | Record<string, string>;
+    wait_for?: string;
     input?: Record<string, any>;
     output_to_context?: Record<string, any>;
     output?: Record<string, any>;
     transitions?: Transition[];
-    tool_loop?: boolean;
+    tool_loop?: boolean | ToolLoopStateConfig;
     sampling?: "single" | "multi";
     foreach?: string;
     as?: string;
@@ -53,6 +54,15 @@ export interface StateDefinition {
     timeout?: number;
     launch?: string | string[];
     launch_input?: Record<string, any>;
+}
+export interface ToolLoopStateConfig {
+    max_tool_calls?: number;
+    max_turns?: number;
+    allowed_tools?: string[];
+    denied_tools?: string[];
+    tool_timeout?: number;
+    total_timeout?: number;
+    max_cost?: number;
 }
 export interface MachineInput {
     name: string;
@@ -93,6 +103,13 @@ export interface MachineSnapshot {
     total_cost?: number;
     parent_execution_id?: string;
     pending_launches?: LaunchIntent[];
+    waiting_channel?: string;
+    tool_loop_state?: {
+        chain: Array<Record<string, any>>;
+        turns: number;
+        tool_calls_count: number;
+        loop_cost: number;
+    };
 }
 export interface PersistenceConfig {
     enabled: boolean;

@@ -152,6 +152,12 @@
         },
         "mcp": {
           "$ref": "#/definitions/MCPConfig"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ToolDefinition"
+          }
         }
       },
       "required": [
@@ -360,6 +366,38 @@
       },
       "additionalProperties": false
     },
+    "ToolDefinition": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "function"
+        },
+        "function": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "function"
+      ],
+      "additionalProperties": false
+    },
     "AgentRefConfig": {
       "type": "object",
       "properties": {
@@ -429,6 +467,9 @@
             }
           ]
         },
+        "wait_for": {
+          "type": "string"
+        },
         "input": {
           "type": "object"
         },
@@ -445,7 +486,14 @@
           }
         },
         "tool_loop": {
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#/definitions/ToolLoopStateConfig"
+            }
+          ]
         },
         "sampling": {
           "type": "string",
@@ -558,6 +606,39 @@
       ],
       "additionalProperties": false
     },
+    "ToolLoopStateConfig": {
+      "type": "object",
+      "properties": {
+        "max_tool_calls": {
+          "type": "number"
+        },
+        "max_turns": {
+          "type": "number"
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "denied_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_timeout": {
+          "type": "number"
+        },
+        "total_timeout": {
+          "type": "number"
+        },
+        "max_cost": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
     "MachineSettings": {
       "type": "object",
       "properties": {
@@ -613,8 +694,7 @@
       "required": [
         "class"
       ],
-      "additionalProperties": false,
-      "description": "Configuration for loading hooks from file or module.\n\nFile-based (preferred for self-contained skills):   hooks:     file: \"./hooks.py\"     class: \"MyHooks\"     args:       working_dir: \".\"\n\nModule-based (for installed packages):   hooks:     module: \"mypackage.hooks\"     class: \"MyHooks\"     args:       api_key: \"{{ input.api_key }}\"\n\nFields:   file   - Path to Python file containing hooks class (relative to machine.yml)   module - Python module path to import   class  - Class name to instantiate (required)   args   - Arguments to pass to hooks constructor"
+      "additionalProperties": false
     }
   }
 }

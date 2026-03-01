@@ -149,7 +149,7 @@
  * The profile field specifies which profile name to use as base.
  */
 
-export const SPEC_VERSION = "1.1.1";
+export const SPEC_VERSION = "1.2.0";
 
 export interface AgentWrapper {
   spec: "flatagent";
@@ -166,6 +166,16 @@ export interface AgentData {
   instruction_suffix?: string;
   output?: OutputSchema;
   mcp?: MCPConfig;
+  tools?: ToolDefinition[];
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, any>;
+  };
 }
 
 export interface MCPConfig {

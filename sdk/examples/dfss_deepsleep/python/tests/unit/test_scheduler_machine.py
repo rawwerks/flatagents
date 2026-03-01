@@ -15,13 +15,14 @@ are implemented. That's the point — TDD targets.
 """
 from __future__ import annotations
 
-import pytest
-from _helpers import load_module
+import copy
 
-scheduler_mod = load_module("scheduler_machine.py", "deepsleep_scheduler_machine")
+import pytest
+from _helpers import load_config, load_module
+
+scheduler_config = load_config("scheduler_machine.yml")
 hooks_mod = load_module("hooks.py", "deepsleep_hooks")
 
-scheduler_config = scheduler_mod.scheduler_config
 DeepSleepHooks = hooks_mod.DeepSleepHooks
 
 
@@ -58,7 +59,7 @@ class TestSchedulerWaitFor:
         hooks = DeepSleepHooks(max_depth=2, seed=1)
 
         machine = FlatMachine(
-            config_dict=scheduler_config(),
+            config_dict=copy.deepcopy(scheduler_config),
             hooks=hooks,
             persistence=MemoryBackend(),
             signal_backend=signal_backend,
@@ -88,7 +89,7 @@ class TestSchedulerWaitFor:
 
         # First run: scheduler parks at wait_for
         machine = FlatMachine(
-            config_dict=scheduler_config(),
+            config_dict=copy.deepcopy(scheduler_config),
             hooks=hooks,
             persistence=persistence,
             signal_backend=signal_backend,
@@ -106,7 +107,7 @@ class TestSchedulerWaitFor:
 
         # Resume: scheduler should wake, pick batch, try to dispatch
         machine2 = FlatMachine(
-            config_dict=scheduler_config(),
+            config_dict=copy.deepcopy(scheduler_config),
             hooks=hooks,
             persistence=persistence,
             signal_backend=signal_backend,
@@ -131,7 +132,7 @@ class TestSchedulerWaitFor:
 
         hooks = DeepSleepHooks(max_depth=2, seed=1)
         machine = FlatMachine(
-            config_dict=scheduler_config(),
+            config_dict=copy.deepcopy(scheduler_config),
             hooks=hooks,
             persistence=MemoryBackend(),
             signal_backend=signal_backend,
@@ -163,7 +164,7 @@ class TestSchedulerCheckpointResume:
 
         hooks = DeepSleepHooks(max_depth=2, seed=1)
         machine = FlatMachine(
-            config_dict=scheduler_config(),
+            config_dict=copy.deepcopy(scheduler_config),
             hooks=hooks,
             persistence=persistence,
             signal_backend=signal_backend,
@@ -193,7 +194,7 @@ class TestSchedulerCheckpointResume:
 
         # Park two schedulers on different channels
         for channel_suffix in ["a", "b"]:
-            cfg = scheduler_config()
+            cfg = copy.deepcopy(scheduler_config)
             cfg["data"]["states"]["wait_for_work"]["wait_for"] = f"dfss/{channel_suffix}"
             m = FlatMachine(
                 config_dict=cfg,

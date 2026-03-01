@@ -7,6 +7,11 @@ export interface PersistenceBackend {
     load(key: string): Promise<MachineSnapshot | null>;
     delete(key: string): Promise<void>;
     list(prefix: string): Promise<string[]>;
+    listExecutionIds?(options?: {
+        event?: string;
+        waiting_channel?: string;
+    }): Promise<string[]>;
+    deleteExecution?(execution_id: string): Promise<void>;
 }
 export interface ResultBackend {
     write(uri: string, data: any): Promise<void>;
@@ -152,6 +157,7 @@ export interface MachineSnapshot {
     total_cost?: number;
     parent_execution_id?: string;
     pending_launches?: LaunchIntent[];
+    waiting_channel?: string;
 }
 export interface LaunchIntent {
     execution_id: string;
@@ -206,15 +212,35 @@ export interface WorkItem {
     attempts: number;
     max_retries: number;
 }
-export interface BackendConfig {
-    persistence?: "memory" | "local" | "redis" | "postgres" | "s3";
-    locking?: "none" | "local" | "redis" | "consul";
-    results?: "memory" | "redis";
-    registration?: "memory" | "sqlite" | "redis";
-    work?: "memory" | "sqlite" | "redis";
-    sqlite_path?: string;
+export interface SignalBackend {
+    send(channel: string, data: any): Promise<string>;
+    consume(channel: string): Promise<Signal | null>;
+    peek(channel: string): Promise<Signal[]>;
+    channels(): Promise<string[]>;
 }
-export const SPEC_VERSION = "1.1.1";
+export interface Signal {
+    id: string;
+    channel: string;
+    data: any;
+    created_at: string;
+}
+export interface TriggerBackend {
+    notify(channel: string): Promise<void>;
+}
+export interface BackendConfig {
+    persistence?: "memory" | "local" | "sqlite" | "redis" | "postgres" | "s3" | "dynamodb";
+    locking?: "none" | "local" | "sqlite" | "redis" | "consul" | "dynamodb";
+    results?: "memory" | "redis" | "dynamodb";
+    registration?: "memory" | "sqlite" | "redis" | "dynamodb";
+    work?: "memory" | "sqlite" | "redis" | "dynamodb";
+    signal?: "memory" | "sqlite" | "redis" | "dynamodb";
+    trigger?: "none" | "file" | "socket";
+    sqlite_path?: string;
+    trigger_path?: string;
+    dynamodb_table?: string;
+    aws_region?: string;
+}
+export const SPEC_VERSION = "1.2.0";
 export interface SDKRuntimeWrapper {
     spec: "flatagents-runtime";
     spec_version: typeof SPEC_VERSION;
@@ -229,4 +255,6 @@ export interface SDKRuntimeWrapper {
     machine_snapshot?: MachineSnapshot;
     registration_backend?: RegistrationBackend;
     work_backend?: WorkBackend;
+    signal_backend?: SignalBackend;
+    trigger_backend?: TriggerBackend;
 }

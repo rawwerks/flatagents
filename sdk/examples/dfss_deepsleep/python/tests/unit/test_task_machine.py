@@ -1,13 +1,14 @@
 """Unit tests for the task runner machine."""
 from __future__ import annotations
 
-import pytest
-from _helpers import load_module
+import copy
 
-task_mod = load_module("task_machine.py", "deepsleep_task_machine")
+import pytest
+from _helpers import load_config, load_module
+
+task_config = load_config("task_machine.yml")
 hooks_mod = load_module("hooks.py", "deepsleep_hooks")
 
-task_config = task_mod.task_config
 DeepSleepHooks = hooks_mod.DeepSleepHooks
 
 
@@ -19,7 +20,7 @@ class TestTaskMachine:
 
         hooks = DeepSleepHooks(max_depth=3, fail_rate=0.0, seed=42)
         machine = FlatMachine(
-            config_dict=task_config(),
+            config_dict=copy.deepcopy(task_config),
             hooks=hooks,
             persistence=MemoryBackend(),
         )
@@ -41,7 +42,7 @@ class TestTaskMachine:
 
         hooks = DeepSleepHooks(max_depth=2, fail_rate=0.0, seed=42)
         machine = FlatMachine(
-            config_dict=task_config(),
+            config_dict=copy.deepcopy(task_config),
             hooks=hooks,
             persistence=MemoryBackend(),
         )
@@ -61,7 +62,7 @@ class TestTaskMachine:
 
         hooks = DeepSleepHooks(max_depth=3, fail_rate=1.0, seed=1)
         machine = FlatMachine(
-            config_dict=task_config(),
+            config_dict=copy.deepcopy(task_config),
             hooks=hooks,
             persistence=MemoryBackend(),
         )
