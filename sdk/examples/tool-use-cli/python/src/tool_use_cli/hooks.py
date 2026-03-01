@@ -112,7 +112,7 @@ class CLIToolHooks(MachineHooks):
 
         print()
         try:
-            response = input("Follow-up (or Enter to finish): ").strip()
+            response = input("> ").strip()
         except (EOFError, KeyboardInterrupt):
             response = ""
 

@@ -29,6 +29,11 @@ from flatagents.tool_loop import ToolLoopAgent, Guardrails, StopReason  # noqa: 
 from .hooks import CLIToolHooks  # noqa: E402
 from .tools import CLIToolProvider  # noqa: E402
 
+try:
+    import readline  # noqa: F401 — enables arrow keys, history in input()
+except ImportError:
+    pass
+
 # Quiet by default — set LOG_LEVEL=INFO or LOG_LEVEL=DEBUG to see logs
 _log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.getLogger().setLevel(_log_level)
@@ -96,24 +101,37 @@ async def run_standalone(task: str, working_dir: str):
 
 async def repl(working_dir: str):
     """Interactive REPL — enter tasks, agent executes with human review loop."""
-    print(f"Tool Use CLI — working dir: {working_dir}")
-    print(f"Type a task, or 'quit' to exit.")
+    print(f"Tool Use CLI — {working_dir}")
     print()
+
+    _interrupt_count = 0
 
     while True:
         try:
             task = input("> ").strip()
-        except (EOFError, KeyboardInterrupt):
+            _interrupt_count = 0
+        except KeyboardInterrupt:
+            # Single ^C clears input, double ^C exits
+            _interrupt_count += 1
+            if _interrupt_count >= 2:
+                print()
+                break
+            print()
+            continue
+        except EOFError:
+            # ^D exits
             print()
             break
 
         if not task:
             continue
-        if task.lower() in ("quit", "exit", "q"):
-            break
+
+        _interrupt_count = 0
 
         try:
             await run_machine(task, working_dir)
+        except KeyboardInterrupt:
+            print("\nInterrupted.")
         except Exception as e:
             print(f"Error: {e}")
 
