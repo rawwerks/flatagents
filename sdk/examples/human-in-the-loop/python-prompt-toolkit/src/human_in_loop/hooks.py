@@ -54,6 +54,8 @@ class HumanInLoopHooks(MachineHooks):
         - 'y' or 'yes' (or empty) to approve
         - Any other input becomes feedback for revision
         """
+        context["revision_count"] = int(context.get("revision_count", 0) or 0) + 1
+
         print("\n" + "=" * 60)
         print("HUMAN REVIEW REQUIRED")
         print("=" * 60)

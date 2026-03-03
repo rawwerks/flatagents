@@ -14,7 +14,7 @@ data:
     raw_draft: null
     draft: null
     human_approved: false
-    max_revisions: "{{ input.max_revisions | default(3) }}"
+    max_revisions: input.max_revisions
     revision_count: 0
 
   # Agent references
@@ -40,7 +40,6 @@ data:
         feedback: "{{ context.human_feedback }}"
       output_to_context:
         raw_draft: "{{ output.content }}"
-        revision_count: "{{ context.revision_count + 1 }}"
       transitions:
         - to: extract_draft
 
@@ -72,14 +71,14 @@ data:
       output:
         content: "{{ context.draft }}"
         status: "max_revisions_reached"
-        revisions: "{{ context.revision_count }}"
+        revisions: context.revision_count
 
     done:
       type: final
       output:
         content: "{{ context.draft }}"
         status: "approved"
-        revisions: "{{ context.revision_count }}"
+        revisions: context.revision_count
 
 metadata:
   description: "Human-in-the-loop content approval workflow"

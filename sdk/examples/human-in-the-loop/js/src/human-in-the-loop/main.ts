@@ -20,6 +20,8 @@ class HumanInLoopHooks implements MachineHooks {
       return context;
     }
 
+    context.revision_count = Number(context.revision_count ?? 0) + 1;
+
     console.log('\n' + '='.repeat(60));
     console.log('HUMAN REVIEW REQUIRED');
     console.log('='.repeat(60));
