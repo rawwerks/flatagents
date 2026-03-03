@@ -2,7 +2,7 @@
 
 Define single-call LLM agents in YAML. Use this package when you want **one structured call** per agent, with optional MCP tools and profile-driven model configs. For orchestration, install `flatmachines` separately.
 
-**For LLM/machine readers:** see [MACHINES.md](./MACHINES.md).
+**For LLM/machine readers:** see [MACHINES.md](https://github.com/memgrafter/flatagents/blob/main/MACHINES.md).
 
 ## Install
 
@@ -121,13 +121,28 @@ from flatagents import FlatMachine
 
 ## Examples (Repo)
 
-- [helloworld](../../examples/helloworld/python)
-- [writer_critic](../../examples/writer_critic/python)
-- [human-in-the-loop](../../examples/human-in-the-loop/python)
-- [parallelism](../../examples/parallelism/python)
+- [character_card](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/character_card/python)
+- [coding_agent_cli](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/coding_agent_cli/python)
+- [custom_coding_workflow](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/custom_coding_workflow/python)
+- [dfss_deepsleep](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/dfss_deepsleep/python)
+- [distributed_worker](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/distributed_worker/python)
+- [dynamic_agent](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/dynamic_agent/python)
+- [error_handling](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/error_handling/python)
+- [gepa_self_optimizer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/gepa_self_optimizer/python)
+- [helloworld](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/helloworld/python)
+- [human-in-the-loop](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/human-in-the-loop/python)
+- [mdap](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/mdap/python)
+- [multi_paper_synthesizer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/multi_paper_synthesizer/python)
+- [parallelism](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/parallelism/python)
+- [peering](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/peering/python)
+- [research_paper_analysis](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/research_paper_analysis/python)
+- [rlm](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/rlm/python)
+- [story_writer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/story_writer/python)
+- [support_triage_json](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/support_triage_json/python)
+- [writer_critic](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/writer_critic/python)
 
 ## Specs
 
 Source of truth:
-- [`flatagent.d.ts`](./flatagents/assets/flatagent.d.ts)
-- [`profiles.d.ts`](./flatagents/assets/profiles.d.ts)
+- [`flatagent.d.ts`](https://github.com/memgrafter/flatagents/blob/main/sdk/python/flatagents/flatagents/assets/flatagent.d.ts)
+- [`profiles.d.ts`](https://github.com/memgrafter/flatagents/blob/main/sdk/python/flatagents/flatagents/assets/profiles.d.ts)

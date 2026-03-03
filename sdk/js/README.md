@@ -2,7 +2,7 @@
 
 Define LLM agents in YAML. Run them anywhere.
 
-**For LLM/machine readers:** see [MACHINES.md](./MACHINES.md) for comprehensive reference.
+**For LLM/machine readers:** see [MACHINES.md](https://github.com/memgrafter/flatagents/blob/main/MACHINES.md) for comprehensive reference.
 
 ## Why?
 
@@ -35,19 +35,19 @@ Use FlatAgent alone for simple tasks. Use FlatMachine when you need multi-step w
 
 | Example | What it demonstrates |
 |---------|---------------------|
-| [helloworld](./sdk/examples/helloworld/python) | Minimal setup — single agent, single state machine |
-| [writer_critic](./sdk/examples/writer_critic/python) | Multi-agent loop — writer drafts, critic reviews, iterates |
-| [story_writer](./sdk/examples/story_writer/python) | Multi-step creative workflow with chapter generation |
-| [human-in-the-loop](./sdk/examples/human-in-the-loop/python) | Pause execution for human approval via hooks |
-| [error_handling](./sdk/examples/error_handling/python) | Error recovery and retry patterns at state machine level |
-| [dynamic_agent](./sdk/examples/dynamic_agent/python) | On-the-fly agent generation from runtime context |
-| [character_card](./sdk/examples/character_card/python) | Loading agent config from character card format |
-| [mdap](./sdk/examples/mdap/python) | MDAP voting execution — multi-sample consensus |
-| [gepa_self_optimizer](./sdk/examples/gepa_self_optimizer/python) | Self-optimizing prompts via reflection and critique |
-| [research_paper_analysis](./sdk/examples/research_paper_analysis/python) | Document analysis with structured extraction |
-| [multi_paper_synthesizer](./sdk/examples/multi_paper_synthesizer/python) | Cross-document synthesis with dynamic machine launching |
-| [support_triage_json](./sdk/examples/support_triage_json/python) | JSON input/output with classification pipeline |
-| [parallelism](./sdk/examples/parallelism/python) | Parallel machines, dynamic foreach, fire-and-forget launches |
+| [helloworld](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/helloworld/python) | Minimal setup — single agent, single state machine |
+| [writer_critic](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/writer_critic/python) | Multi-agent loop — writer drafts, critic reviews, iterates |
+| [story_writer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/story_writer/python) | Multi-step creative workflow with chapter generation |
+| [human-in-the-loop](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/human-in-the-loop/python) | Pause execution for human approval via hooks |
+| [error_handling](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/error_handling/python) | Error recovery and retry patterns at state machine level |
+| [dynamic_agent](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/dynamic_agent/python) | On-the-fly agent generation from runtime context |
+| [character_card](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/character_card/python) | Loading agent config from character card format |
+| [mdap](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/mdap/python) | MDAP voting execution — multi-sample consensus |
+| [gepa_self_optimizer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/gepa_self_optimizer/python) | Self-optimizing prompts via reflection and critique |
+| [research_paper_analysis](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/research_paper_analysis/python) | Document analysis with structured extraction |
+| [multi_paper_synthesizer](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/multi_paper_synthesizer/python) | Cross-document synthesis with dynamic machine launching |
+| [support_triage_json](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/support_triage_json/python) | JSON input/output with classification pipeline |
+| [parallelism](https://github.com/memgrafter/flatagents/tree/main/sdk/examples/parallelism/python) | Parallel machines, dynamic foreach, fire-and-forget launches |
 
 ## Quick Start
 
@@ -167,7 +167,7 @@ Use `enum: [...]` to constrain string values.
 
 ## Multi-Agent Workflows
 
-For orchestration, use FlatMachine ([full docs in MACHINES.md](./MACHINES.md)):
+For orchestration, use FlatMachine ([full docs in MACHINES.md](https://github.com/memgrafter/flatagents/blob/main/MACHINES.md)):
 
 ```python
 from flatagents import FlatMachine
@@ -182,7 +182,7 @@ FlatMachine provides: state transitions, conditional branching, loops, retry wit
 
 - Checkpoint and restore
 - Python SDK (TypeScript SDK in progress)
-- [MACHINES.md](./MACHINES.md) — LLM-optimized reference docs
+- [MACHINES.md](https://github.com/memgrafter/flatagents/blob/main/MACHINES.md) — LLM-optimized reference docs
 - Decider agents and machines
 - On-the-fly agent and machine definitions
 - Webhook hooks for remote state machine handling
@@ -206,9 +206,9 @@ FlatMachine provides: state transitions, conditional branching, loops, retry wit
 ## Specs
 
 TypeScript definitions are the source of truth:
-- [`flatagent.d.ts`](./flatagent.d.ts)
-- [`flatmachine.d.ts`](./flatmachine.d.ts)
-- [`profiles.d.ts`](./profiles.d.ts)
+- [`flatagent.d.ts`](https://github.com/memgrafter/flatagents/blob/main/flatagent.d.ts)
+- [`flatmachine.d.ts`](https://github.com/memgrafter/flatagents/blob/main/flatmachine.d.ts)
+- [`profiles.d.ts`](https://github.com/memgrafter/flatagents/blob/main/profiles.d.ts)
 
 ## Python SDK
 

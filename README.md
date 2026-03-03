@@ -35,22 +35,31 @@ Use FlatAgent alone for simple tasks. Use FlatMachine when you need multi-step w
 
 ## Examples
 
-| Example | What it demonstrates |
-|---------|---------------------|
-| [helloworld](./sdk/examples/helloworld/python) | Minimal setup — single agent, single state machine |
-| [writer_critic](./sdk/examples/writer_critic/python) | Multi-agent loop — writer drafts, critic reviews, iterates |
-| [story_writer](./sdk/examples/story_writer/python) | Multi-step creative workflow with chapter generation |
-| [human-in-the-loop](./sdk/examples/human-in-the-loop/python) | Pause execution for human approval via hooks |
-| [error_handling](./sdk/examples/error_handling/python) | Error recovery and retry patterns at state machine level |
-| [dynamic_agent](./sdk/examples/dynamic_agent/python) | On-the-fly agent generation from runtime context |
-| [character_card](./sdk/examples/character_card/python) | Loading agent config from character card format |
-| [mdap](./sdk/examples/mdap/python) | MDAP voting execution — multi-sample consensus |
-| [gepa_self_optimizer](./sdk/examples/gepa_self_optimizer/python) | Self-optimizing prompts via reflection and critique |
-| [research_paper_analysis](./sdk/examples/research_paper_analysis/python) | Document analysis with structured extraction |
-| [multi_paper_synthesizer](./sdk/examples/multi_paper_synthesizer/python) | Cross-document synthesis with dynamic machine launching |
-| [support_triage_json](./sdk/examples/support_triage_json/python) | JSON input/output with classification pipeline |
-| [distributed_worker](./sdk/examples/distributed_worker/python) | Worker pool with registration + work backends, scaling, stale worker reaping |
-| [parallelism](./sdk/examples/parallelism/python) | Parallel machines, dynamic foreach, fire-and-forget launches |
+Current runnable examples live in [`./sdk/examples`](./sdk/examples):
+
+| Example | Link |
+|---------|------|
+| anything_agent | [./sdk/examples/anything_agent](./sdk/examples/anything_agent) |
+| character_card | [./sdk/examples/character_card](./sdk/examples/character_card) |
+| coding_agent_cli | [./sdk/examples/coding_agent_cli](./sdk/examples/coding_agent_cli) |
+| custom_coding_workflow | [./sdk/examples/custom_coding_workflow](./sdk/examples/custom_coding_workflow) |
+| dfss_deepsleep | [./sdk/examples/dfss_deepsleep](./sdk/examples/dfss_deepsleep) |
+| dfss_pipeline | [./sdk/examples/dfss_pipeline](./sdk/examples/dfss_pipeline) |
+| distributed_worker | [./sdk/examples/distributed_worker](./sdk/examples/distributed_worker) |
+| dynamic_agent | [./sdk/examples/dynamic_agent](./sdk/examples/dynamic_agent) |
+| error_handling | [./sdk/examples/error_handling](./sdk/examples/error_handling) |
+| gepa_self_optimizer | [./sdk/examples/gepa_self_optimizer](./sdk/examples/gepa_self_optimizer) |
+| helloworld | [./sdk/examples/helloworld](./sdk/examples/helloworld) |
+| human-in-the-loop | [./sdk/examples/human-in-the-loop](./sdk/examples/human-in-the-loop) |
+| mdap | [./sdk/examples/mdap](./sdk/examples/mdap) |
+| multi_paper_synthesizer | [./sdk/examples/multi_paper_synthesizer](./sdk/examples/multi_paper_synthesizer) |
+| parallelism | [./sdk/examples/parallelism](./sdk/examples/parallelism) |
+| peering | [./sdk/examples/peering](./sdk/examples/peering) |
+| research_paper_analysis | [./sdk/examples/research_paper_analysis](./sdk/examples/research_paper_analysis) |
+| rlm | [./sdk/examples/rlm](./sdk/examples/rlm) |
+| story_writer | [./sdk/examples/story_writer](./sdk/examples/story_writer) |
+| support_triage_json | [./sdk/examples/support_triage_json](./sdk/examples/support_triage_json) |
+| writer_critic | [./sdk/examples/writer_critic](./sdk/examples/writer_critic) |
 
 ## Quick Start
 
