@@ -8,9 +8,7 @@ data:
     pool_id: "{{ input.pool_id | default('default') }}"
     max_workers: "{{ input.max_workers | default(3) }}"
   
-  hooks:
-    file: "../python/hooks.py"
-    class: "DistributedWorkerHooks"
+  hooks: "distributed-worker"
   
   machines:
     job_worker: ./job_worker.yml

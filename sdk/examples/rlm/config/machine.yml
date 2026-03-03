@@ -228,9 +228,7 @@ data:
     max_steps: 50
     parallel_fallback: sequential
 
-  hooks:
-    file: "../src/rlm/hooks.py"
-    class: "RLMHooks"
+  hooks: "rlm"
 
 metadata:
   description: "Recursive Language Model - handles arbitrarily long contexts via REPL exploration and recursive decomposition"

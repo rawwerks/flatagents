@@ -10,9 +10,7 @@ data:
   context:
     delay_seconds: 1
   
-  hooks:
-    file: "../python/hooks.py"
-    class: "DistributedWorkerHooks"
+  hooks: "distributed-worker"
   
   states:
     start:

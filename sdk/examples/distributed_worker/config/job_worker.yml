@@ -11,9 +11,7 @@ data:
     pool_id: "{{ input.pool_id | default('default') }}"
     worker_id: "{{ input.worker_id | default('unknown') }}"
   
-  hooks:
-    file: "../python/hooks.py"
-    class: "DistributedWorkerHooks"
+  hooks: "distributed-worker"
   
   machines:
     echo_processor: ./echo_processor.yml

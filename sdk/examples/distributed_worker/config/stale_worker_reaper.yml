@@ -8,9 +8,7 @@ data:
     pool_id: "{{ input.pool_id | default('default') }}"
     stale_threshold_seconds: "{{ input.stale_threshold_seconds | default(60) }}"
   
-  hooks:
-    file: "../python/hooks.py"
-    class: "DistributedWorkerHooks"
+  hooks: "distributed-worker"
   
   states:
     start:

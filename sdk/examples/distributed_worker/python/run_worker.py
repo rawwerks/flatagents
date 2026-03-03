@@ -20,7 +20,8 @@ from pathlib import Path
 EXAMPLE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
 
-from flatmachines import FlatMachine
+from flatmachines import FlatMachine, HooksRegistry
+from hooks import DemoHooks
 
 
 async def main():
@@ -36,7 +37,9 @@ async def main():
     
     print(f"Starting worker {worker_id} (pool={args.pool})")
     
-    machine = FlatMachine(config_file=str(config_path))
+    registry = HooksRegistry()
+    registry.register("distributed-worker", DemoHooks)
+    machine = FlatMachine(config_file=str(config_path), hooks_registry=registry)
     
     result = await machine.execute(input={
         "pool_id": args.pool,

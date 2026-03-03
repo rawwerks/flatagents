@@ -22,7 +22,8 @@ import asyncio
 import sys
 from pathlib import Path
 
-from flatmachines import FlatMachine, setup_logging, get_logger
+from flatmachines import FlatMachine, HooksRegistry, setup_logging, get_logger
+from rlm.hooks import RLMHooks
 
 setup_logging(level='INFO')
 logger = get_logger(__name__)
@@ -51,8 +52,11 @@ async def run_rlm(
     if not config_path.exists():
         raise FileNotFoundError(f"Machine config not found: {config_path}")
 
+    registry = HooksRegistry()
+    registry.register("rlm", RLMHooks)
     machine = FlatMachine(
-        config_file=str(config_path)
+        config_file=str(config_path),
+        hooks_registry=registry,
     )
 
     logger.info(f"Starting RLM with context of {len(context)} characters")

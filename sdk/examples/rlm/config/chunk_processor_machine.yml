@@ -98,9 +98,7 @@ data:
   settings:
     max_steps: 10
 
-  hooks:
-    file: "../src/rlm/hooks.py"
-    class: "RLMHooks"
+  hooks: "rlm"
 
 metadata:
   description: "Processes a single chunk for a sub-task"
