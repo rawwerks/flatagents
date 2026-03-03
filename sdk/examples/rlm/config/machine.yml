@@ -13,10 +13,11 @@ data:
     # Input parameters
     task: "{{ input.task }}"
     context_content: "{{ input.context }}"
-    context_length: "{{ input.context | length }}"
-    estimated_tokens: "{{ (input.context | length) // 4 }}"
-    max_chunk_size: "{{ input.max_chunk_size | default(16000) }}"
-    max_exploration_rounds: "{{ input.max_exploration_rounds | default(5) }}"
+    context_length: "{{ input.context | length | int }}"
+    estimated_tokens: "{{ ((input.context | length) // 4) | int }}"
+    # Bare path references preserve native types (important for numeric comparisons)
+    max_chunk_size: input.max_chunk_size
+    max_exploration_rounds: input.max_exploration_rounds
 
     # Exploration state
     exploration_round: 0

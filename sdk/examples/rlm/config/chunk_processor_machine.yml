@@ -13,7 +13,7 @@ data:
     task: "{{ input.task }}"
     sub_task: "{{ input.sub_task }}"
     context_content: "{{ input.context_content }}"
-    total_length: "{{ input.total_length }}"
+    total_length: input.total_length
 
     # Extracted chunk
     chunk_content: null
