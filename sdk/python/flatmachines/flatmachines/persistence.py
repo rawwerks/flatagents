@@ -576,3 +576,28 @@ class SQLiteCheckpointBackend(PersistenceBackend):
                 (execution_id,),
             )
             self._conn.commit()
+
+
+async def clone_snapshot(
+    snapshot: MachineSnapshot,
+    new_execution_id: str,
+    persistence: PersistenceBackend,
+) -> MachineSnapshot:
+    """Copy a snapshot under a new execution ID and persist it.
+
+    The clone gets a new execution_id, a fresh created_at timestamp,
+    parent_execution_id set to the source's execution_id, and
+    pending_launches dropped (to avoid duplicate child ownership).
+
+    All other fields (current_state, context, step, tool_loop_state,
+    waiting_channel, etc.) are preserved exactly.
+    """
+    cloned = MachineSnapshot(**asdict(snapshot))
+    cloned.execution_id = new_execution_id
+    cloned.created_at = datetime.now(timezone.utc).isoformat()
+    cloned.parent_execution_id = snapshot.execution_id
+    cloned.pending_launches = None
+
+    manager = CheckpointManager(persistence, new_execution_id)
+    await manager.save_checkpoint(cloned)
+    return cloned

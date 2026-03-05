@@ -41,6 +41,7 @@ from .persistence import (
     SQLiteCheckpointBackend,
     CheckpointManager,
     MachineSnapshot,
+    clone_snapshot,
 )
 from .locking import ExecutionLock, LocalFileLock, NoOpLock, SQLiteLeaseLock
 from .agents import (
@@ -127,6 +128,7 @@ __all__ = [
     "MemoryBackend",
     "CheckpointManager",
     "MachineSnapshot",
+    "clone_snapshot",
     "SQLiteCheckpointBackend",
     "ExecutionLock",
     "LocalFileLock",
