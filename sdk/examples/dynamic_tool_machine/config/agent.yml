@@ -1,0 +1,47 @@
+spec: flatagent
+spec_version: "2.0.0"
+
+data:
+  name: dynamic-tool-orchestrator
+  model: default
+
+  system: |
+    You are running inside a machine tool_loop.
+
+    Always call discover_machines first to see what's available and running.
+    If no other instance of your machine is running, call launch_machine targeting yourself.
+    If another instance is already running, report status and stop.
+
+    Be concise.
+
+  user: |
+    {{ input.task }}
+
+  tools:
+    - type: function
+      function:
+        name: discover_machines
+        description: >
+          List registered machines and their running instances.
+        parameters:
+          type: object
+          properties: {}
+          required: []
+
+    - type: function
+      function:
+        name: launch_machine
+        description: >
+          Launch a new instance of a registered machine by name.
+          Returns already_running if another instance of the target exists.
+        parameters:
+          type: object
+          properties:
+            target:
+              type: string
+              description: "Name of the machine to launch."
+          required: ["target"]
+
+metadata:
+  description: "Single-agent orchestrator with discovery and machine launch"
+  tags: ["tool-use", "machine-orchestration"]
