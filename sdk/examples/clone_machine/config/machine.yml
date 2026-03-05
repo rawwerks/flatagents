@@ -1,0 +1,34 @@
+spec: flatmachine
+spec_version: "2.0.0"
+
+data:
+  name: clone-machine
+
+  # No agent/tool loop in this example.
+  # The single action clones the pre-action checkpoint snapshot.
+  context: {}
+
+  states:
+    start:
+      type: initial
+      transitions:
+        - to: clone
+
+    clone:
+      action: clone_machine
+      transitions:
+        - to: done
+
+    done:
+      type: final
+      output:
+        status: "{{ context.clone.status }}"
+        source_execution_id: "{{ context.clone.source_execution_id }}"
+        source_state: "{{ context.clone.source_state }}"
+        source_event: "{{ context.clone.source_event }}"
+        cloned_execution_id: "{{ context.clone.cloned_execution_id }}"
+        cloned_parent_execution_id: "{{ context.clone.cloned_parent_execution_id }}"
+
+metadata:
+  description: "Clone snapshot via action hook (no LLM)"
+  tags: ["action", "snapshot", "clone", "no-llm"]

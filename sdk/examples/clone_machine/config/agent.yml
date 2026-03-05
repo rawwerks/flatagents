@@ -1,0 +1,2 @@
+# Intentionally unused in this example.
+# clone_machine is action-hook based and does not use any FlatAgent/LLM state.
