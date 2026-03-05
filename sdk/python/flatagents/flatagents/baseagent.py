@@ -90,23 +90,26 @@ class LiteLLMBackend:
     def __init__(
         self,
         model: str,
-        temperature: float = 0.7,
+        temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        top_p: float = 1.0,
-        frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         retry_delays: Optional[List[float]] = None,
     ):
         if litellm is None:
             raise ImportError("litellm is required. Install with: pip install litellm")
 
         self.model = model
-        self.llm_kwargs = {
-            "temperature": temperature,
-            "top_p": top_p,
-            "frequency_penalty": frequency_penalty,
-            "presence_penalty": presence_penalty,
-        }
+        self.llm_kwargs = {}
+        if temperature is not None:
+            self.llm_kwargs["temperature"] = temperature
+        if top_p is not None:
+            self.llm_kwargs["top_p"] = top_p
+        if frequency_penalty is not None:
+            self.llm_kwargs["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            self.llm_kwargs["presence_penalty"] = presence_penalty
         if max_tokens is not None:
             self.llm_kwargs["max_tokens"] = max_tokens
         self.retry_delays = retry_delays or [1, 2, 4, 8]
@@ -193,9 +196,9 @@ class AISuiteBackend:
     def __init__(
         self,
         model: str,
-        temperature: float = 0.7,
+        temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        top_p: float = 1.0,
+        top_p: Optional[float] = None,
         retry_delays: Optional[List[float]] = None,
     ):
         if aisuite is None:
@@ -203,10 +206,11 @@ class AISuiteBackend:
 
         # Normalize model format: accept both "provider/model" and "provider:model"
         self.model = model.replace("/", ":", 1) if "/" in model else model
-        self.llm_kwargs = {
-            "temperature": temperature,
-            "top_p": top_p,
-        }
+        self.llm_kwargs = {}
+        if temperature is not None:
+            self.llm_kwargs["temperature"] = temperature
+        if top_p is not None:
+            self.llm_kwargs["top_p"] = top_p
         if max_tokens is not None:
             self.llm_kwargs["max_tokens"] = max_tokens
         self.retry_delays = retry_delays or [1, 2, 4, 8]
@@ -1051,11 +1055,11 @@ class FlatAgent(ABC):
 
         # Store config values for backend creation
         self.model = kwargs.get('model', full_model_name)
-        self.temperature = get_value('temperature', 0.7)
+        self.temperature = get_value('temperature', None)
         self.max_tokens = get_value('max_tokens', None)
-        self.top_p = get_value('top_p', 1.0)
-        self.frequency_penalty = get_value('frequency_penalty', 0.0)
-        self.presence_penalty = get_value('presence_penalty', 0.0)
+        self.top_p = get_value('top_p', None)
+        self.frequency_penalty = get_value('frequency_penalty', None)
+        self.presence_penalty = get_value('presence_penalty', None)
         self.retry_delays = model_config.get('retry_delays', [1, 2, 4, 8])
 
         # Store raw config for subclass access

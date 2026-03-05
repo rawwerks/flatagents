@@ -233,8 +233,9 @@ class FlatAgent:
         call_params = {
             "model": model,
             "messages": params["messages"],
-            "temperature": params.get("temperature", 0.7),
         }
+        if "temperature" in params:
+            call_params["temperature"] = params["temperature"]
         if "max_tokens" in params:
             call_params["max_tokens"] = params["max_tokens"]
         if "tools" in params:
@@ -255,9 +256,9 @@ class FlatAgent:
         config = self._aisuite_client.provider_configs.get("cerebras", {})
         provider = ProviderFactory.create_provider("cerebras", config)
 
-        kwargs = {
-            "temperature": params.get("temperature", 0.7),
-        }
+        kwargs = {}
+        if "temperature" in params:
+            kwargs["temperature"] = params["temperature"]
         if "max_tokens" in params:
             kwargs["max_tokens"] = params["max_tokens"]
         if "tools" in params:
@@ -334,7 +335,7 @@ class FlatAgent:
 
         # Set model attributes (with kwargs override)
         self.model = kwargs.get('model', full_model_name)
-        self.temperature = kwargs.get('temperature', model_config.get('temperature', 0.7))
+        self.temperature = kwargs.get('temperature', model_config.get('temperature'))
         self.max_tokens = kwargs.get('max_tokens', model_config.get('max_tokens'))
 
         # Extended model config fields
@@ -703,8 +704,10 @@ class FlatAgent:
         params = {
             "model": self.model,
             "messages": all_messages,
-            "temperature": self.temperature,
         }
+        # Only include temperature if explicitly provided
+        if self.temperature is not None:
+            params["temperature"] = self.temperature
         # Only include max_tokens if explicitly provided
         if self.max_tokens is not None:
             params["max_tokens"] = self.max_tokens
