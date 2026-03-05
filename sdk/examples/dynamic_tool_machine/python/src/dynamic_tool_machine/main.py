@@ -3,7 +3,12 @@ from pathlib import Path
 
 from flatmachines import FlatMachine
 
-from .tools import MachineRegistry, InstanceTracker, DynamicMachineToolProvider
+from .tools import (
+    MachineRegistry,
+    InstanceTracker,
+    DynamicMachineToolProvider,
+    DynamicInlineInvoker,
+)
 
 
 def _config_path(name: str) -> str:
@@ -14,10 +19,12 @@ async def run():
     registry = MachineRegistry()
     tracker = InstanceTracker()
     provider = DynamicMachineToolProvider(registry=registry, tracker=tracker)
+    invoker = DynamicInlineInvoker(registry=registry, tracker=tracker)
 
     machine = FlatMachine(
         config_file=_config_path("machine.yml"),
         tool_provider=provider,
+        invoker=invoker,
     )
     provider.bind_machine(machine)
 

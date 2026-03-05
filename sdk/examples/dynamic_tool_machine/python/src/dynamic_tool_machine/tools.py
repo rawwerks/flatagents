@@ -7,7 +7,8 @@ from typing import Any, Dict
 
 
 from flatagents.tools import ToolResult
-from flatmachines import FlatMachine
+from flatmachines import FlatMachine, make_uri
+from flatmachines.actions import InlineInvoker
 
 
 class MachineRegistry:
@@ -86,6 +87,90 @@ class InstanceTracker:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
             self._tasks.clear()
+
+
+class DynamicInlineInvoker(InlineInvoker):
+    """Inline invoker that propagates this example's dynamic tool provider."""
+
+    def __init__(self, registry: MachineRegistry, tracker: InstanceTracker):
+        super().__init__()
+        self._registry = registry
+        self._tracker = tracker
+
+    async def invoke(
+        self,
+        caller_machine,
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: str | None = None,
+    ) -> Dict[str, Any]:
+        if not execution_id:
+            execution_id = str(uuid.uuid4())
+
+        await self.launch(
+            caller_machine=caller_machine,
+            target_config=target_config,
+            input_data=input_data,
+            execution_id=execution_id,
+        )
+
+        uri = make_uri(execution_id, "result")
+        return await caller_machine.result_backend.read(uri, block=True)
+
+    async def launch(
+        self,
+        caller_machine,
+        target_config: Dict[str, Any],
+        input_data: Dict[str, Any],
+        execution_id: str,
+    ) -> None:
+        target_name = target_config.get("data", {}).get("name", "unknown")
+
+        child_provider = DynamicMachineToolProvider(
+            registry=self._registry,
+            tracker=self._tracker,
+        )
+
+        child_machine = FlatMachine(
+            config_dict=target_config,
+            hooks_registry=getattr(caller_machine, "_hooks_registry", None),
+            persistence=caller_machine.persistence,
+            lock=caller_machine.lock,
+            result_backend=caller_machine.result_backend,
+            signal_backend=caller_machine.signal_backend,
+            trigger_backend=caller_machine.trigger_backend,
+            agent_registry=caller_machine.agent_registry,
+            tool_provider=child_provider,
+            _config_dir=caller_machine._config_dir,
+            _execution_id=execution_id,
+            _parent_execution_id=caller_machine.execution_id,
+            _profiles_dict=getattr(caller_machine, "_profiles_dict", None),
+            _profiles_file=getattr(caller_machine, "_profiles_file", None),
+        )
+        child_provider.bind_machine(child_machine)
+
+        # Register immediately so parent and child see symmetric instance state.
+        await self._tracker.add(target_name, execution_id)
+        child_provider._registered = True
+
+        async def _execute_and_write():
+            try:
+                result = await child_machine.execute(input=input_data)
+                uri = make_uri(execution_id, "result")
+                await caller_machine.result_backend.write(uri, result)
+            except Exception as e:
+                uri = make_uri(execution_id, "result")
+                await caller_machine.result_backend.write(uri, {
+                    "_error": str(e),
+                    "_error_type": type(e).__name__,
+                })
+                raise
+            finally:
+                await child_provider._deregister()
+
+        task = asyncio.create_task(_execute_and_write())
+        caller_machine._background_tasks.add(task)
+        task.add_done_callback(caller_machine._background_tasks.discard)
 
 
 class DynamicMachineToolProvider:
@@ -194,43 +279,17 @@ class DynamicMachineToolProvider:
                 "instances": [eid[:12] for eid in others],
             }, indent=2))
 
-        # Launch a new instance
+        # Launch a new instance through the machine's invoker (InlineInvoker in this example)
         new_id = str(uuid.uuid4())
-        config_dir = self._registry.get_config_dir(target)
-        profiles_dict, profiles_file = self._registry.get_profiles(target)
 
-        new_provider = DynamicMachineToolProvider(
-            registry=self._registry,
-            tracker=self._tracker,
+        await self._machine.invoker.launch(
+            caller_machine=self._machine,
+            target_config=config,
+            input_data={
+                "task": f"You are a new instance of {target}. Discover machines and report status.",
+            },
+            execution_id=new_id,
         )
-
-        new_machine = FlatMachine(
-            config_dict=config,
-            tool_provider=new_provider,
-            _config_dir=config_dir,
-            _execution_id=new_id,
-            _profiles_dict=profiles_dict,
-            _profiles_file=profiles_file,
-        )
-        new_provider.bind_machine(new_machine)
-
-        # Register the new instance before it starts
-        await self._tracker.add(target, new_id)
-        new_provider._registered = True
-
-        async def _run():
-            try:
-                result = await new_machine.execute(input={
-                    "task": f"You are a new instance of {target}. Discover machines and report status.",
-                })
-                return result
-            except Exception as e:
-                print(f"[{target}/{new_id[:12]}] error: {e}")
-            finally:
-                await new_provider._deregister()
-
-        task = asyncio.create_task(_run())
-        self._tracker.track_task(task)
 
         return ToolResult(content=json.dumps({
             "status": "launched",

@@ -14,9 +14,12 @@ execution IDs are running per machine name.
 
 When `launch_machine` targets a machine name, it resolves the config from
 the registry, checks the tracker for existing instances, and either launches
-a new one or reports that one is already running. The launched instance is a
-peer — it sees the original the same way the original sees it, both tracked
-as instances of the same machine name.
+a new one or reports that one is already running.
+
+Launches are routed through the machine's `invoker` (this example wires a
+custom `DynamicInlineInvoker`, based on `InlineInvoker`) so launch behavior
+uses the same core launch path while still propagating the dynamic tool
+provider to child instances.
 
 ## Run
 
@@ -25,8 +28,8 @@ cd sdk/examples/dynamic_tool_machine/python
 ./run.sh --local
 ```
 
-Single task:
+Run:
 
 ```bash
-./run.sh --local -p "Discover machines and launch if needed"
+./run.sh --local
 ```

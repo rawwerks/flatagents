@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
@@ -35,7 +34,7 @@ MINIMAL_CONFIG = {
 }
 
 
-def _fake_machine(execution_id: str = "exec-aaa", name: str = MACHINE_NAME):
+def _fake_machine(execution_id: str = "exec-aaa", name: str = MACHINE_NAME, invoker=None):
     """Return an object that quacks enough like FlatMachine for the provider."""
     return SimpleNamespace(
         execution_id=execution_id,
@@ -44,7 +43,17 @@ def _fake_machine(execution_id: str = "exec-aaa", name: str = MACHINE_NAME):
         _config_dir="/tmp/fake",
         _profiles_dict=None,
         _profiles_file=None,
+        invoker=invoker,
     )
+
+
+def _fake_invoker(tracker: InstanceTracker):
+    class _Invoker:
+        async def launch(self, caller_machine, target_config, input_data, execution_id):
+            target_name = target_config.get("data", {}).get("name", MACHINE_NAME)
+            await tracker.add(target_name, execution_id)
+
+    return _Invoker()
 
 
 # ---------------------------------------------------------------------------
@@ -221,27 +230,16 @@ class TestLaunchMachine:
         reg = MachineRegistry()
         tracker = InstanceTracker()
         provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine("exec-original"))
+        provider.bind_machine(
+            _fake_machine("exec-original", invoker=_fake_invoker(tracker))
+        )
 
         # Register via discover
         await provider.execute_tool("discover_machines", "tc0", {})
 
-        # Patch FlatMachine so we don't actually run a real machine
-        with patch("dynamic_tool_machine.tools.FlatMachine") as MockFM:
-            mock_instance = MockFM.return_value
-            mock_instance.machine_name = MACHINE_NAME
-            mock_instance.execution_id = "exec-launched"
-            mock_instance.config = MINIMAL_CONFIG
-            mock_instance._config_dir = "/tmp/fake"
-            mock_instance._profiles_dict = None
-            mock_instance._profiles_file = None
-
-            import asyncio
-            mock_instance.execute = lambda **kw: asyncio.coroutine(lambda: {"result": "ok"})()
-
-            result = await provider.execute_tool(
-                "launch_machine", "tc1", {"target": MACHINE_NAME}
-            )
+        result = await provider.execute_tool(
+            "launch_machine", "tc1", {"target": MACHINE_NAME}
+        )
 
         data = json.loads(result.content)
         assert data["status"] == "launched"
@@ -347,7 +345,7 @@ class TestSymmetry:
         tracker = InstanceTracker()
 
         p1 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p1.bind_machine(_fake_machine("exec-original"))
+        p1.bind_machine(_fake_machine("exec-original", invoker=_fake_invoker(tracker)))
         await p1.execute_tool("discover_machines", "tc0", {})
 
         p2 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
@@ -360,21 +358,9 @@ class TestSymmetry:
         assert await tracker.count(MACHINE_NAME) == 1
 
         # Original can now launch again
-        with patch("dynamic_tool_machine.tools.FlatMachine") as MockFM:
-            mock_instance = MockFM.return_value
-            mock_instance.machine_name = MACHINE_NAME
-            mock_instance.execution_id = "exec-new"
-            mock_instance.config = MINIMAL_CONFIG
-            mock_instance._config_dir = "/tmp/fake"
-            mock_instance._profiles_dict = None
-            mock_instance._profiles_file = None
-
-            import asyncio
-            mock_instance.execute = lambda **kw: asyncio.coroutine(lambda: {"result": "ok"})()
-
-            result = await p1.execute_tool(
-                "launch_machine", "tc1", {"target": MACHINE_NAME}
-            )
+        result = await p1.execute_tool(
+            "launch_machine", "tc1", {"target": MACHINE_NAME}
+        )
 
         data = json.loads(result.content)
         assert data["status"] == "launched"
