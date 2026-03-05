@@ -168,6 +168,9 @@ export interface MachineSnapshot {
     pending_launches?: LaunchIntent[];
     waiting_channel?: string;
 }
+export interface SnapshotRuntime {
+    clone_snapshot(snapshot: MachineSnapshot, new_execution_id: string, persistence: PersistenceBackend): Promise<MachineSnapshot>;
+}
 export interface LaunchIntent {
     execution_id: string;
     machine: string;
@@ -263,6 +266,7 @@ export interface SDKRuntimeWrapper {
     machine_invoker?: MachineInvoker;
     backend_config?: BackendConfig;
     machine_snapshot?: MachineSnapshot;
+    snapshot_runtime?: SnapshotRuntime;
     registration_backend?: RegistrationBackend;
     work_backend?: WorkBackend;
     signal_backend?: SignalBackend;

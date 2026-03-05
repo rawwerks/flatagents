@@ -570,6 +570,26 @@ export interface MachineSnapshot {
     waiting_channel?: string;
 }
 
+export interface SnapshotRuntime {
+    /**
+     * Clone a persisted machine state under a new execution ID.
+     *
+     * Reference implementation (SDK-specific internals may vary):
+     * 1) Deep-copy the source snapshot
+     * 2) Set execution_id = new_execution_id
+     * 3) Set created_at = current UTC ISO timestamp
+     * 4) Set parent_execution_id = source.execution_id
+     * 5) Drop pending_launches (avoid duplicate child ownership)
+     * 6) Persist under new_execution_id via checkpoint manager/backend
+     * 7) Return the cloned snapshot
+     */
+    clone_snapshot(
+        snapshot: MachineSnapshot,
+        new_execution_id: string,
+        persistence: PersistenceBackend
+    ): Promise<MachineSnapshot>;
+}
+
 export interface LaunchIntent {
     execution_id: string;
     machine: string;
@@ -795,6 +815,7 @@ export interface SDKRuntimeWrapper {
     machine_invoker?: MachineInvoker;
     backend_config?: BackendConfig;
     machine_snapshot?: MachineSnapshot;
+    snapshot_runtime?: SnapshotRuntime;
     registration_backend?: RegistrationBackend;
     work_backend?: WorkBackend;
     signal_backend?: SignalBackend;

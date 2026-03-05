@@ -20,7 +20,8 @@ def get_parent_config():
             "name": "parent",
             "context": {"value": 10},
             "persistence": {"enabled": True, "backend": "local"},
-            "agents": {
+            "agents": {},
+            "machines": {
                 # Reference to peer machine config (inline)
                 "child_machine": {
                     "spec": "flatmachine",
@@ -120,28 +121,29 @@ class TestMachineLaunching:
         config = get_parent_config()
         machine = FlatMachine(config_dict=config)
         
-        # Verify agent_refs includes the peer machine
-        assert "child_machine" in machine.agent_refs
-        
+        # Verify machine_refs includes the peer machine
+        assert "child_machine" in machine.machine_refs
+
         # Verify it's a dict (inline config)
-        assert isinstance(machine.agent_refs["child_machine"], dict)
-        
+        assert isinstance(machine.machine_refs["child_machine"], dict)
+
         # Verify child config structure
-        child_config = machine.agent_refs["child_machine"]
+        child_config = machine.machine_refs["child_machine"]
         assert child_config["spec"] == "flatmachine"
         assert "states" in child_config["data"]
 
 
-class TestMachineAsAgent:
-    """Test treating machines as callable agents."""
+class TestMachineReferences:
+    """Test machine reference resolution."""
 
     @pytest.mark.asyncio
-    async def test_resolve_config_for_machine(self):
-        """_resolve_config works for inline machine configs."""
+    async def test_resolve_machine_config_for_inline_machine(self):
+        """_resolve_machine_config works for inline machine configs."""
         config = get_parent_config()
         machine = FlatMachine(config_dict=config)
-        
-        resolved = machine._resolve_config("child_machine")
-        
+
+        resolved, cfg_dir = machine._resolve_machine_config("child_machine")
+
         assert resolved["spec"] == "flatmachine"
         assert resolved["data"]["name"] == "child"
+        assert isinstance(cfg_dir, str)

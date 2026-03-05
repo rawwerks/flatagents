@@ -40,7 +40,13 @@
           ]
         },
         "context": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "machine": {
+              "$ref": "#/definitions/MachineRuntimeMetadata"
+            }
+          },
+          "description": "Initial user context. Runtime reserves `context.machine` and overwrites it each step/resume with MachineRuntimeMetadata."
         },
         "agents": {
           "type": "object",
@@ -81,6 +87,46 @@
         "states"
       ],
       "additionalProperties": false
+    },
+    "MachineRuntimeMetadata": {
+      "type": "object",
+      "properties": {
+        "execution_id": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "parent_execution_id": {
+          "type": "string"
+        },
+        "spec_version": {
+          "type": "string"
+        },
+        "step": {
+          "type": "number"
+        },
+        "current_state": {
+          "type": "string"
+        },
+        "total_api_calls": {
+          "type": "number"
+        },
+        "total_cost": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "execution_id",
+        "machine_name",
+        "spec_version",
+        "step",
+        "current_state",
+        "total_api_calls",
+        "total_cost"
+      ],
+      "additionalProperties": false,
+      "description": "Runtime-owned metadata injected at context.machine"
     },
     "AgentRef": {
       "anyOf": [

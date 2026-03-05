@@ -43,6 +43,9 @@
         "machine_snapshot": {
           "$ref": "#/definitions/MachineSnapshot"
         },
+        "snapshot_runtime": {
+          "$ref": "#/definitions/SnapshotRuntime"
+        },
         "registration_backend": {
           "$ref": "#/definitions/RegistrationBackend"
         },
@@ -318,6 +321,10 @@
         "input",
         "launched"
       ],
+      "additionalProperties": false
+    },
+    "SnapshotRuntime": {
+      "type": "object",
       "additionalProperties": false
     },
     "RegistrationBackend": {

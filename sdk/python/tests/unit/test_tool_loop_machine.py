@@ -376,8 +376,8 @@ class TestMachineGuardrails:
 
     @pytest.mark.asyncio
     async def test_jinja2_guardrail_rendering(self):
-        """Guardrails can be Jinja2 templates resolved from context."""
-        cfg = _machine_config(tool_loop={"max_turns": "{{ context.max_iters }}", "total_timeout": 600})
+        """Guardrails can be Jinja2 templates resolved from context with cast filters."""
+        cfg = _machine_config(tool_loop={"max_turns": "{{ context.max_iters | int }}", "total_timeout": 600})
         cfg["data"]["context"]["max_iters"] = 2
         provider = MockToolProvider()
         responses = [

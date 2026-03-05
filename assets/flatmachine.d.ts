@@ -311,6 +311,8 @@
  * MACHINE SNAPSHOT:
  * -----------------
  * Wire format for checkpoints.
+ * context.machine    - Runtime-owned metadata (execution_id, step, state, cost/calls)
+ *                      Rebuilt from live machine state on each step/resume.
  * parent_execution_id - Lineage tracking (v0.4.0)
  * pending_launches    - Outbox pattern (v0.4.0)
  * waiting_channel     - Signal channel this machine is blocked on (v1.2.0)
@@ -325,10 +327,26 @@ export interface MachineWrapper {
   metadata?: Record<string, any>;
 }
 
+/** Runtime-owned metadata injected at context.machine */
+export interface MachineRuntimeMetadata {
+  execution_id: string;
+  machine_name: string;
+  parent_execution_id?: string;
+  spec_version: string;
+  step: number;
+  current_state: string;
+  total_api_calls: number;
+  total_cost: number;
+}
+
 export interface MachineData {
   name?: string;
   expression_engine?: "simple" | "cel";
-  context?: Record<string, any>;
+  /**
+   * Initial user context. Runtime reserves `context.machine` and overwrites
+   * it each step/resume with MachineRuntimeMetadata.
+   */
+  context?: Record<string, any> & { machine?: MachineRuntimeMetadata };
   agents?: Record<string, AgentRef>;
   machines?: Record<string, string | MachineWrapper>;
   states: Record<string, StateDefinition>;
@@ -427,7 +445,7 @@ export interface MachineSnapshot {
   machine_name: string;
   spec_version: string;
   current_state: string;
-  context: Record<string, any>;
+  context: Record<string, any> & { machine?: MachineRuntimeMetadata };
   step: number;
   created_at: string;
   event?: string;
