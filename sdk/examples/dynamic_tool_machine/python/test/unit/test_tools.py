@@ -1,366 +1,291 @@
-"""Unit tests for MachineRegistry, InstanceTracker, and DynamicMachineToolProvider."""
+"""Unit tests for clone_machine tool providers."""
 from __future__ import annotations
 
+import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from dynamic_tool_machine.tools import (
-    DynamicMachineToolProvider,
-    InstanceTracker,
-    MachineRegistry,
-)
+from clone_machine.tools import GeneratedToolProvider, ParentToolProvider
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class _FakeProc:
+    def __init__(self, *, returncode: int | None, stdout: bytes = b"", stderr: bytes = b""):
+        self.returncode = returncode
+        self._stdout = stdout
+        self._stderr = stderr
+        self.terminated = False
+        self.killed = False
 
-MACHINE_NAME = "dynamic-tool-machine"
+    async def communicate(self):
+        return self._stdout, self._stderr
 
-MINIMAL_CONFIG = {
-    "spec": "flatmachine",
-    "spec_version": "2.0.0",
-    "data": {
-        "name": MACHINE_NAME,
-        "context": {"task": "{{ input.task }}"},
-        "agents": {},
-        "states": {
-            "start": {"type": "initial", "transitions": [{"to": "done"}]},
-            "done": {"type": "final", "output": {}},
-        },
-    },
-}
+    def terminate(self):
+        self.terminated = True
+        self.returncode = self.returncode if self.returncode is not None else -15
+
+    def kill(self):
+        self.killed = True
+        self.returncode = self.returncode if self.returncode is not None else -9
+
+    async def wait(self):
+        if self.returncode is None:
+            self.returncode = -15
+        return self.returncode
 
 
-def _fake_machine(execution_id: str = "exec-aaa", name: str = MACHINE_NAME, invoker=None):
-    """Return an object that quacks enough like FlatMachine for the provider."""
-    return SimpleNamespace(
-        execution_id=execution_id,
-        machine_name=name,
-        config=MINIMAL_CONFIG,
-        _config_dir="/tmp/fake",
-        _profiles_dict=None,
-        _profiles_file=None,
-        invoker=invoker,
+def _bind(provider: ParentToolProvider) -> None:
+    provider.bind_machine(SimpleNamespace())
+
+
+@pytest.mark.asyncio
+async def test_parent_provider_requires_bind_machine():
+    provider = ParentToolProvider()
+
+    result = await provider.execute_tool("generate_native_tool", "tc1", {})
+
+    assert result.is_error is True
+    assert "not bound" in result.content.lower()
+
+
+@pytest.mark.asyncio
+async def test_parent_provider_unknown_tool_returns_error():
+    provider = ParentToolProvider()
+    _bind(provider)
+
+    result = await provider.execute_tool("does_not_exist", "tc1", {})
+
+    assert result.is_error is True
+    assert "unknown tool" in result.content.lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_native_tool_writes_manifest_and_module():
+    provider = ParentToolProvider()
+    _bind(provider)
+
+    result = await provider.execute_tool("generate_native_tool", "tc1", {})
+    data = json.loads(result.content)
+
+    assert result.is_error is False
+    assert data["status"] == "generated"
+    assert len(data["run_id"]) == 10
+    assert data["tool_name"].startswith("generated_native_tool_")
+
+    artifact_dir = Path(data["artifact_dir"])
+    assert artifact_dir.exists()
+
+    manifest_path = artifact_dir / "tool_manifest.json"
+    module_path = artifact_dir / "generated_tool.py"
+    assert manifest_path.exists()
+    assert module_path.exists()
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["run_id"] == data["run_id"]
+    assert manifest["tool_name"] == data["tool_name"]
+    assert manifest["entrypoint"] == "run"
+    assert Path(manifest["module_file"]) == module_path
+
+
+@pytest.mark.asyncio
+async def test_launch_generated_machine_requires_generation_first():
+    provider = ParentToolProvider()
+    _bind(provider)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+
+    assert result.is_error is True
+    assert "generate_native_tool" in result.content
+
+
+@pytest.mark.asyncio
+async def test_launch_generated_machine_handles_subprocess_failure(monkeypatch):
+    provider = ParentToolProvider()
+    _bind(provider)
+    await provider.execute_tool("generate_native_tool", "tc0", {})
+
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(returncode=7, stdout=b"out", stderr=b"boom")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+    data = json.loads(result.content)
+
+    assert result.is_error is True
+    assert data["status"] == "subprocess_failed"
+    assert data["returncode"] == 7
+    assert data["stderr"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_launch_generated_machine_handles_missing_result_file(monkeypatch):
+    provider = ParentToolProvider()
+    _bind(provider)
+    await provider.execute_tool("generate_native_tool", "tc0", {})
+
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+    data = json.loads(result.content)
+
+    assert result.is_error is True
+    assert data["status"] == "missing_child_result"
+
+
+@pytest.mark.asyncio
+async def test_launch_generated_machine_success(monkeypatch):
+    provider = ParentToolProvider()
+    _bind(provider)
+    generated = await provider.execute_tool("generate_native_tool", "tc0", {})
+    generated_data = json.loads(generated.content)
+    artifact_dir = Path(generated_data["artifact_dir"])
+
+    async def _fake_exec(*args, **kwargs):
+        args = list(args)
+        result_file = Path(args[args.index("--result-file") + 1])
+        result_file.write_text(json.dumps({"execution_id": "child-1", "result": {"ok": True}}))
+        return _FakeProc(returncode=0, stdout=b"child ok")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+    data = json.loads(result.content)
+
+    assert result.is_error is False
+    assert data["status"] == "launched_subprocess"
+    assert data["child_payload"]["execution_id"] == "child-1"
+    assert data["child_payload"]["result"] == {"ok": True}
+    assert data["artifacts_retained"] is False
+    assert artifact_dir.exists() is False
+
+
+@pytest.mark.asyncio
+async def test_launch_generated_machine_timeout(monkeypatch):
+    provider = ParentToolProvider(launch_timeout_seconds=0.01)
+    _bind(provider)
+    await provider.execute_tool("generate_native_tool", "tc0", {})
+
+    proc = _FakeProc(returncode=None)
+
+    async def _hang_communicate():
+        await asyncio.sleep(1.0)
+        return b"", b""
+
+    proc.communicate = _hang_communicate
+
+    async def _fake_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+    data = json.loads(result.content)
+
+    assert result.is_error is True
+    assert data["status"] == "subprocess_timeout"
+    assert proc.terminated is True
+
+
+def test_generated_tool_provider_loads_manifest_and_definition(tmp_path):
+    module_file = tmp_path / "generated_tool.py"
+    module_file.write_text(
+        "def run(arguments: dict) -> str:\n"
+        "    return 'echo: ' + str(arguments.get('text', ''))\n"
     )
 
-
-def _fake_invoker(tracker: InstanceTracker):
-    class _Invoker:
-        async def launch(self, caller_machine, target_config, input_data, execution_id):
-            target_name = target_config.get("data", {}).get("name", MACHINE_NAME)
-            await tracker.add(target_name, execution_id)
-
-    return _Invoker()
-
-
-# ---------------------------------------------------------------------------
-# MachineRegistry
-# ---------------------------------------------------------------------------
-
-class TestMachineRegistry:
-
-    def test_register_and_list(self):
-        reg = MachineRegistry()
-        reg.register("m1", {"spec": "flatmachine"}, "/d1")
-        reg.register("m2", {"spec": "flatmachine"}, "/d2")
-        assert reg.list_machines() == ["m1", "m2"]
-
-    def test_get_returns_config(self):
-        reg = MachineRegistry()
-        cfg = {"spec": "flatmachine", "data": {}}
-        reg.register("m1", cfg, "/d1")
-        assert reg.get("m1") is cfg
-
-    def test_get_unknown_returns_none(self):
-        reg = MachineRegistry()
-        assert reg.get("nope") is None
-
-    def test_profiles_round_trip(self):
-        reg = MachineRegistry()
-        reg.register("m1", {}, "/d", profiles_dict={"fast": {}}, profiles_file="/p.yml")
-        d, f = reg.get_profiles("m1")
-        assert d == {"fast": {}}
-        assert f == "/p.yml"
-
-    def test_profiles_default(self):
-        reg = MachineRegistry()
-        d, f = reg.get_profiles("missing")
-        assert d is None and f is None
-
-
-# ---------------------------------------------------------------------------
-# InstanceTracker
-# ---------------------------------------------------------------------------
-
-class TestInstanceTracker:
-
-    @pytest.mark.asyncio
-    async def test_add_and_count(self):
-        t = InstanceTracker()
-        await t.add("m1", "a")
-        await t.add("m1", "b")
-        assert await t.count("m1") == 2
-
-    @pytest.mark.asyncio
-    async def test_remove(self):
-        t = InstanceTracker()
-        await t.add("m1", "a")
-        await t.add("m1", "b")
-        await t.remove("m1", "a")
-        assert await t.get_instances("m1") == ["b"]
-
-    @pytest.mark.asyncio
-    async def test_remove_last_cleans_up(self):
-        t = InstanceTracker()
-        await t.add("m1", "a")
-        await t.remove("m1", "a")
-        assert await t.count("m1") == 0
-        assert await t.get_instances("m1") == []
-
-    @pytest.mark.asyncio
-    async def test_remove_nonexistent_is_safe(self):
-        t = InstanceTracker()
-        await t.remove("m1", "ghost")  # no error
-
-    @pytest.mark.asyncio
-    async def test_get_instances_sorted(self):
-        t = InstanceTracker()
-        await t.add("m1", "ccc")
-        await t.add("m1", "aaa")
-        await t.add("m1", "bbb")
-        assert await t.get_instances("m1") == ["aaa", "bbb", "ccc"]
-
-
-# ---------------------------------------------------------------------------
-# DynamicMachineToolProvider — discover_machines
-# ---------------------------------------------------------------------------
-
-class TestDiscoverMachines:
-
-    @pytest.mark.asyncio
-    async def test_discover_returns_self(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine("exec-111"))
-
-        result = await provider.execute_tool("discover_machines", "tc1", {})
-
-        data = json.loads(result.content)
-        assert data["self_name"] == MACHINE_NAME
-        assert data["self_id"] == "exec-111"[:12]
-        # Machine should be registered in the registry now
-        assert MACHINE_NAME in data["machines"]
-
-    @pytest.mark.asyncio
-    async def test_discover_shows_all_instances(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-
-        p1 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p1.bind_machine(_fake_machine("exec-aaa"))
-        await p1.execute_tool("discover_machines", "tc1", {})
-
-        # Manually add a second instance to the tracker
-        await tracker.add(MACHINE_NAME, "exec-bbb")
-
-        result = await p1.execute_tool("discover_machines", "tc2", {})
-        data = json.loads(result.content)
-        assert data["machines"][MACHINE_NAME]["running"] == 2
-
-    @pytest.mark.asyncio
-    async def test_not_bound_returns_error(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        # Never called bind_machine
-
-        result = await provider.execute_tool("discover_machines", "tc1", {})
-        assert result.is_error is True
-
-    @pytest.mark.asyncio
-    async def test_unknown_tool_returns_error(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine())
-
-        result = await provider.execute_tool("nonexistent", "tc1", {})
-        assert result.is_error is True
-        assert "Unknown tool" in result.content
-
-
-# ---------------------------------------------------------------------------
-# DynamicMachineToolProvider — launch_machine
-# ---------------------------------------------------------------------------
-
-class TestLaunchMachine:
-
-    @pytest.mark.asyncio
-    async def test_launch_missing_target_returns_error(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine())
-
-        result = await provider.execute_tool("launch_machine", "tc1", {})
-        assert result.is_error is True
-        assert "target" in result.content.lower()
-
-    @pytest.mark.asyncio
-    async def test_launch_unknown_target_returns_error(self):
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine())
-
-        # ensure_registered so discover works
-        await provider.execute_tool("discover_machines", "tc0", {})
-
-        result = await provider.execute_tool("launch_machine", "tc1", {"target": "no-such-machine"})
-        assert result.is_error is True
-        assert "Unknown machine" in result.content
-
-    @pytest.mark.asyncio
-    async def test_launch_self_when_no_other_instance(self):
-        """Launching self when no other instance exists should return 'launched'."""
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(
-            _fake_machine("exec-original", invoker=_fake_invoker(tracker))
-        )
-
-        # Register via discover
-        await provider.execute_tool("discover_machines", "tc0", {})
-
-        result = await provider.execute_tool(
-            "launch_machine", "tc1", {"target": MACHINE_NAME}
-        )
-
-        data = json.loads(result.content)
-        assert data["status"] == "launched"
-        assert data["target"] == MACHINE_NAME
-        assert data["total_running"] == 2  # original + launched
-
-    @pytest.mark.asyncio
-    async def test_launch_self_when_other_instance_exists(self):
-        """Launching self when another instance already runs returns 'already_running'."""
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-        provider = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        provider.bind_machine(_fake_machine("exec-original"))
-
-        # Register via discover
-        await provider.execute_tool("discover_machines", "tc0", {})
-
-        # Simulate another instance already in the tracker
-        await tracker.add(MACHINE_NAME, "exec-other")
-
-        result = await provider.execute_tool(
-            "launch_machine", "tc1", {"target": MACHINE_NAME}
-        )
-
-        data = json.loads(result.content)
-        assert data["status"] == "already_running"
-        assert data["target"] == MACHINE_NAME
-
-
-# ---------------------------------------------------------------------------
-# Symmetry: both instances see the same machine name
-# ---------------------------------------------------------------------------
-
-class TestSymmetry:
-
-    @pytest.mark.asyncio
-    async def test_both_instances_see_same_machine_name(self):
-        """After launch, both the original and the launched instance
-        discover themselves under the same machine name."""
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-
-        # Original
-        p1 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p1.bind_machine(_fake_machine("exec-original"))
-        await p1.execute_tool("discover_machines", "tc0", {})
-
-        # Simulate the launched instance (same registry/tracker, different execution_id)
-        p2 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p2.bind_machine(_fake_machine("exec-launched"))
-        await p2.execute_tool("discover_machines", "tc0", {})
-
-        # Both should see 2 instances under the same machine name
-        r1 = await p1.execute_tool("discover_machines", "tc1", {})
-        r2 = await p2.execute_tool("discover_machines", "tc2", {})
-
-        d1 = json.loads(r1.content)
-        d2 = json.loads(r2.content)
-
-        # Same machine name in both
-        assert d1["self_name"] == MACHINE_NAME
-        assert d2["self_name"] == MACHINE_NAME
-
-        # Both see 2 running instances
-        assert d1["machines"][MACHINE_NAME]["running"] == 2
-        assert d2["machines"][MACHINE_NAME]["running"] == 2
-
-        # Each sees the other's ID in the instance list
-        ids_1 = set(d1["machines"][MACHINE_NAME]["instance_ids"])
-        ids_2 = set(d2["machines"][MACHINE_NAME]["instance_ids"])
-        assert ids_1 == ids_2
-        assert "exec-original"[:12] in ids_1
-        assert "exec-launched"[:12] in ids_1
-
-    @pytest.mark.asyncio
-    async def test_launched_instance_also_blocked_from_launching(self):
-        """The launched instance also gets 'already_running' if it tries
-        to launch, since the original is still tracked."""
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-
-        # Original registers
-        p1 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p1.bind_machine(_fake_machine("exec-original"))
-        await p1.execute_tool("discover_machines", "tc0", {})
-
-        # Launched instance registers
-        p2 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p2.bind_machine(_fake_machine("exec-launched"))
-        await p2.execute_tool("discover_machines", "tc0", {})
-
-        # Launched tries to launch another — should be blocked
-        result = await p2.execute_tool(
-            "launch_machine", "tc1", {"target": MACHINE_NAME}
-        )
-        data = json.loads(result.content)
-        assert data["status"] == "already_running"
-
-    @pytest.mark.asyncio
-    async def test_after_deregister_launch_allowed_again(self):
-        """Once an instance deregisters, the remaining one can launch again."""
-        reg = MachineRegistry()
-        tracker = InstanceTracker()
-
-        p1 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p1.bind_machine(_fake_machine("exec-original", invoker=_fake_invoker(tracker)))
-        await p1.execute_tool("discover_machines", "tc0", {})
-
-        p2 = DynamicMachineToolProvider(registry=reg, tracker=tracker)
-        p2.bind_machine(_fake_machine("exec-launched"))
-        await p2.execute_tool("discover_machines", "tc0", {})
-
-        # Launched deregisters (simulating completion)
-        await p2._deregister()
-
-        assert await tracker.count(MACHINE_NAME) == 1
-
-        # Original can now launch again
-        result = await p1.execute_tool(
-            "launch_machine", "tc1", {"target": MACHINE_NAME}
-        )
-
-        data = json.loads(result.content)
-        assert data["status"] == "launched"
+    manifest = {
+        "tool_name": "generated_native_tool_test",
+        "description": "test tool",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+        "module_file": str(module_file),
+        "entrypoint": "run",
+    }
+    (tmp_path / "tool_manifest.json").write_text(json.dumps(manifest))
+
+    provider = GeneratedToolProvider(tmp_path)
+    defs = provider.get_tool_definitions()
+
+    assert defs[0]["function"]["name"] == "generated_native_tool_test"
+
+
+@pytest.mark.asyncio
+async def test_generated_tool_provider_execute_and_unknown_tool(tmp_path):
+    module_file = tmp_path / "generated_tool.py"
+    module_file.write_text(
+        "def run(arguments: dict) -> str:\n"
+        "    return 'echo: ' + str(arguments.get('text', ''))\n"
+    )
+
+    manifest = {
+        "tool_name": "generated_native_tool_test",
+        "description": "test tool",
+        "parameters": {"type": "object", "properties": {"text": {"type": "string"}}},
+        "module_file": str(module_file),
+        "entrypoint": "run",
+    }
+    (tmp_path / "tool_manifest.json").write_text(json.dumps(manifest))
+
+    provider = GeneratedToolProvider(tmp_path)
+
+    ok = await provider.execute_tool("generated_native_tool_test", "tc1", {"text": "hi"})
+    bad = await provider.execute_tool("wrong_name", "tc2", {"text": "hi"})
+
+    assert ok.is_error is False
+    assert ok.content == "echo: hi"
+    assert bad.is_error is True
+    assert "unknown generated tool" in bad.content.lower()
+
+
+@pytest.mark.asyncio
+async def test_keep_artifacts_flag_retains_generated_artifacts(monkeypatch):
+    provider = ParentToolProvider(keep_artifacts=True)
+    _bind(provider)
+    generated = await provider.execute_tool("generate_native_tool", "tc0", {})
+    generated_data = json.loads(generated.content)
+    artifact_dir = Path(generated_data["artifact_dir"])
+
+    async def _fake_exec(*args, **kwargs):
+        args = list(args)
+        result_file = Path(args[args.index("--result-file") + 1])
+        result_file.write_text(json.dumps({"execution_id": "child-1", "result": {"ok": True}}))
+        return _FakeProc(returncode=0, stdout=b"child ok")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    result = await provider.execute_tool("launch_generated_machine", "tc1", {})
+    data = json.loads(result.content)
+
+    assert data["artifacts_retained"] is True
+    assert artifact_dir.exists() is True
+
+
+def test_generated_tool_provider_missing_manifest_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        GeneratedToolProvider(tmp_path)
+
+
+def test_generated_tool_provider_missing_entrypoint_raises(tmp_path):
+    module_file = tmp_path / "generated_tool.py"
+    module_file.write_text("def not_run(arguments: dict) -> str:\n    return 'x'\n")
+
+    manifest = {
+        "tool_name": "generated_native_tool_test",
+        "description": "test tool",
+        "parameters": {"type": "object", "properties": {}},
+        "module_file": str(module_file),
+        "entrypoint": "run",
+    }
+    (tmp_path / "tool_manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(RuntimeError, match="Entrypoint"):
+        GeneratedToolProvider(tmp_path)

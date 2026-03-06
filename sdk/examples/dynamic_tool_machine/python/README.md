@@ -1,25 +1,20 @@
-# Dynamic Tool Machine
+# Clone Machine (Phase 1)
 
-Single-machine / single-agent example of **machine-level tool calls** with self-launch.
+This example demonstrates:
 
-Tool surface (2 tools):
-- `discover_machines` — list registered machines and their running instances
-- `launch_machine` — launch a new instance of a machine by name; no-op if one is already running
+1. Parent machine generates a **native Python tool implementation** each run.
+2. Parent launches a **child machine in a subprocess**.
+3. Child reconstructs and executes that generated tool from artifacts.
 
-## How it works
+The generated tool is deterministic in phase 1 (template-based), but a new
+artifact directory and run ID are created on every run.
 
-Machines register themselves in an in-memory `MachineRegistry` (keyed by
-machine name) on first tool call. An `InstanceTracker` records which
-execution IDs are running per machine name.
+## Layout
 
-When `launch_machine` targets a machine name, it resolves the config from
-the registry, checks the tracker for existing instances, and either launches
-a new one or reports that one is already running.
-
-Launches are routed through the machine's `invoker` (this example wires a
-custom `DynamicInlineInvoker`, based on `InlineInvoker`) so launch behavior
-uses the same core launch path while still propagating the dynamic tool
-provider to child instances.
+- Parent machine config: `../config/machine.yml`
+- Child machine config: `../config/child_machine.yml`
+- Parent provider: `src/clone_machine/tools.py` (`ParentToolProvider`)
+- Child runner: `src/clone_machine/child_runner.py`
 
 ## Run
 
@@ -28,8 +23,11 @@ cd sdk/examples/dynamic_tool_machine/python
 ./run.sh --local
 ```
 
-Run:
+Output includes:
+- generated `run_id`
+- generated `tool_name`
+- child subprocess execution ID
+- child machine result using the generated tool
 
-```bash
-./run.sh --local
-```
+By default, generated artifacts are cleaned up after subprocess launch.
+Set `CLONE_MACHINE_KEEP_ARTIFACTS=1` to retain artifacts for inspection.

@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "--- Dynamic Tool Machine Unit Tests ---"
+echo "--- Clone Machine Unit Tests ---"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
