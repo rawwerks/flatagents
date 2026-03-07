@@ -110,20 +110,38 @@ def _render_template(text: str, values: Dict[str, str]) -> str:
     return rendered
 
 
+def _resolve_exec(executable: str) -> str:
+    """Resolve executable to an absolute path when possible.
+
+    systemd rejects ExecStart values that contain a slash but are not absolute
+    (e.g. '.venv/bin/python'). Keep symlink paths intact (don't dereference),
+    so venv python shims still behave like the venv interpreter.
+    """
+    if os.sep in executable or (os.altsep and os.altsep in executable):
+        return os.path.abspath(os.path.expanduser(executable))
+
+    found = shutil.which(executable)
+    if found:
+        return found
+
+    return executable
+
+
 def _activation_values(args) -> Dict[str, str]:
     paths = _default_paths()
-    db = Path(args.db_path) if getattr(args, "db_path", None) else paths["db"]
-    trigger_base = Path(args.trigger_base) if getattr(args, "trigger_base", None) else paths["trigger_base"]
+    db = Path(args.db_path).expanduser().resolve() if getattr(args, "db_path", None) else paths["db"]
+    trigger_base = Path(args.trigger_base).expanduser().resolve() if getattr(args, "trigger_base", None) else paths["trigger_base"]
     trigger_file = trigger_base / "trigger"
-    python_exec = getattr(args, "python", None) or sys.executable
+    python_arg = getattr(args, "python", None)
+    python_exec = _resolve_exec(python_arg) if python_arg else sys.executable
     label = getattr(args, "label", None) or "dev.flatmachines.listener_os"
     service_name = getattr(args, "service_name", None) or "listener-os-dispatch"
 
     return {
         "LABEL": label,
         "SERVICE_NAME": service_name,
-        "PYTHON": str(python_exec),
-        "WORKDIR": str(paths["root"] / "python"),
+        "PYTHON": python_exec,
+        "WORKDIR": str((paths["root"] / "python").resolve()),
         "DB_PATH": str(db),
         "TRIGGER_FILE": str(trigger_file),
         "OUT_LOG": str(paths["out_log"]),
