@@ -24,6 +24,7 @@ from typing import Any, Dict, Tuple
 
 from flatmachines import (
     CheckpointManager,
+    ConfigStoreResumer,
     FileTrigger,
     FlatMachine,
     NoOpTrigger,
@@ -88,14 +89,16 @@ def _build_backends(db_path: Path):
     _ensure_parent(db_path)
     signal_backend = SQLiteSignalBackend(db_path=str(db_path))
     persistence = SQLiteCheckpointBackend(db_path=str(db_path))
-    return signal_backend, persistence
+    config_store = persistence.config_store
+    return signal_backend, persistence, config_store
 
 
-def _machine(config_path: Path, persistence, signal_backend) -> FlatMachine:
+def _machine(config_path: Path, persistence, signal_backend, config_store) -> FlatMachine:
     return FlatMachine(
         config_file=str(config_path),
         persistence=persistence,
         signal_backend=signal_backend,
+        config_store=config_store,
     )
 
 
@@ -181,18 +184,17 @@ def _run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
-async def _resume_one(execution_id: str, signal_data: Any, *, config_path: Path, persistence, signal_backend) -> None:
-    machine = _machine(config_path, persistence, signal_backend)
-    result = await machine.execute(resume_from=execution_id)
-    logger.info(f"resumed {execution_id}: {json.dumps(result, default=str)}")
+def _resumer(signal_backend, persistence, config_store) -> ConfigStoreResumer:
+    """Build a ConfigStoreResumer for the demo machine."""
+    return ConfigStoreResumer(signal_backend, persistence, config_store)
 
 
 async def cmd_park(args) -> None:
     paths = _default_paths()
     db_path = Path(args.db_path) if args.db_path else paths["db"]
-    signal_backend, persistence = _build_backends(db_path)
+    signal_backend, persistence, config_store = _build_backends(db_path)
 
-    machine = _machine(paths["machine"], persistence, signal_backend)
+    machine = _machine(paths["machine"], persistence, signal_backend, config_store)
     result = await machine.execute(input={"task_id": args.task_id})
 
     print(json.dumps({"execution_id": machine.execution_id, "result": result}, indent=2))
@@ -204,7 +206,7 @@ async def cmd_send(args) -> None:
     trigger_base = Path(args.trigger_base) if args.trigger_base else paths["trigger_base"]
     socket_path = Path(args.socket_path) if args.socket_path else paths["socket"]
 
-    signal_backend, _ = _build_backends(db_path)
+    signal_backend, _, _ = _build_backends(db_path)
 
     if args.trigger == "none":
         trigger_backend = NoOpTrigger()
@@ -234,18 +236,10 @@ async def cmd_send(args) -> None:
 async def cmd_dispatch_once(args) -> None:
     paths = _default_paths()
     db_path = Path(args.db_path) if args.db_path else paths["db"]
-    signal_backend, persistence = _build_backends(db_path)
+    signal_backend, persistence, config_store = _build_backends(db_path)
 
-    async def resume_fn(execution_id: str, signal_data: Any) -> None:
-        await _resume_one(
-            execution_id,
-            signal_data,
-            config_path=paths["machine"],
-            persistence=persistence,
-            signal_backend=signal_backend,
-        )
-
-    results = await run_once(signal_backend, persistence, resume_fn=resume_fn)
+    resumer = _resumer(signal_backend, persistence, config_store)
+    results = await run_once(signal_backend, persistence, resumer=resumer)
     print(json.dumps(results, indent=2, default=str))
 
 
@@ -253,16 +247,9 @@ async def cmd_listen(args) -> None:
     paths = _default_paths()
     db_path = Path(args.db_path) if args.db_path else paths["db"]
     socket_path = Path(args.socket_path) if args.socket_path else paths["socket"]
-    signal_backend, persistence = _build_backends(db_path)
+    signal_backend, persistence, config_store = _build_backends(db_path)
 
-    async def resume_fn(execution_id: str, signal_data: Any) -> None:
-        await _resume_one(
-            execution_id,
-            signal_data,
-            config_path=paths["machine"],
-            persistence=persistence,
-            signal_backend=signal_backend,
-        )
+    resumer = _resumer(signal_backend, persistence, config_store)
 
     stop_event = asyncio.Event()
     stopper = None
@@ -277,7 +264,7 @@ async def cmd_listen(args) -> None:
             signal_backend,
             persistence,
             socket_path=str(socket_path),
-            resume_fn=resume_fn,
+            resumer=resumer,
             stop_event=stop_event,
         )
     finally:
@@ -288,7 +275,7 @@ async def cmd_listen(args) -> None:
 async def cmd_status(args) -> None:
     paths = _default_paths()
     db_path = Path(args.db_path) if args.db_path else paths["db"]
-    signal_backend, persistence = _build_backends(db_path)
+    signal_backend, persistence, _ = _build_backends(db_path)
 
     channels = await signal_backend.channels()
     pending = {ch: len(await signal_backend.peek(ch)) for ch in channels}

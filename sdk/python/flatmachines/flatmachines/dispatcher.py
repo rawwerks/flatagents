@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from .persistence import PersistenceBackend, CheckpointManager
+from .resume import MachineResumer
 from .signals import SignalBackend, TriggerBackend
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,12 @@ class SignalDispatcher:
 
     Consumes signals from the signal backend, finds machines whose latest
     checkpoint has a matching waiting_channel, and calls the resume callback.
+
+    Resume can be provided as either:
+    - A ``MachineResumer`` instance (preferred): ``resumer=ConfigFileResumer(...)``
+    - A bare async callback: ``resume_fn=my_async_fn``
+
+    If both are provided, ``resumer`` takes precedence.
     """
 
     def __init__(
@@ -34,6 +41,8 @@ class SignalDispatcher:
         signal_backend: SignalBackend,
         persistence_backend: PersistenceBackend,
         resume_fn: Optional[Callable[[str, Any], Coroutine]] = None,
+        *,
+        resumer: Optional[MachineResumer] = None,
     ):
         """
         Args:
@@ -41,10 +50,14 @@ class SignalDispatcher:
             persistence_backend: Where machine checkpoints live
             resume_fn: async callback(execution_id, signal_data) to resume a machine.
                        If None, dispatcher just returns the IDs to resume.
+            resumer: MachineResumer instance (preferred over resume_fn).
         """
         self.signal_backend = signal_backend
         self.persistence_backend = persistence_backend
-        self.resume_fn = resume_fn
+        if resumer is not None:
+            self.resume_fn = resumer.resume
+        else:
+            self.resume_fn = resume_fn
 
     async def dispatch(self, channel: str) -> List[str]:
         """Process one signal on a channel.

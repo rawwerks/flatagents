@@ -42,6 +42,11 @@ from .persistence import (
     CheckpointManager,
     MachineSnapshot,
     clone_snapshot,
+    ConfigStore,
+    MemoryConfigStore,
+    LocalFileConfigStore,
+    SQLiteConfigStore,
+    config_hash,
 )
 from .locking import ExecutionLock, LocalFileLock, NoOpLock, SQLiteLeaseLock
 from .agents import (
@@ -88,6 +93,7 @@ from .signals import (
     create_trigger_backend,
 )
 from .dispatcher import SignalDispatcher
+from .resume import MachineResumer, ConfigStoreResumer, ConfigFileResumer
 from .signals_helpers import send_and_notify
 from .flatmachine import WaitingForSignal
 
@@ -131,6 +137,11 @@ __all__ = [
     "MachineSnapshot",
     "clone_snapshot",
     "SQLiteCheckpointBackend",
+    "ConfigStore",
+    "MemoryConfigStore",
+    "LocalFileConfigStore",
+    "SQLiteConfigStore",
+    "config_hash",
     "ExecutionLock",
     "LocalFileLock",
     "NoOpLock",
@@ -172,6 +183,9 @@ __all__ = [
     "create_signal_backend",
     "create_trigger_backend",
     "SignalDispatcher",
+    "MachineResumer",
+    "ConfigStoreResumer",
+    "ConfigFileResumer",
     "send_and_notify",
     "WaitingForSignal",
 ]

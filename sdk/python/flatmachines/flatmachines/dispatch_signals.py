@@ -28,7 +28,7 @@ import asyncio
 import json
 import logging
 import sys
-from typing import Any, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -135,37 +135,73 @@ def _create_persistence_backend(
 
 
 async def _default_resume_fn(execution_id: str, signal_data: Any) -> None:
-    """Default resume: re-execute the machine from its checkpoint.
+    """Fallback resume: logs a warning and does nothing.
 
-    This loads the machine config from the checkpoint's machine_name and
-    resumes execution. For production use, callers should provide a custom
-    resume_fn that knows how to reconstruct the full FlatMachine with the
-    correct config, hooks, adapters, etc.
+    Used only when neither a ``MachineResumer`` nor a ``resume_fn`` is
+    provided. In practice you should always pass one of:
+
+    - ``resumer=ConfigFileResumer(signal_backend, persistence)``
+    - ``resume_fn=my_custom_async_callback``
     """
     logger.info(f"Default resume: {execution_id} (signal data: {signal_data})")
     logger.warning(
         f"Using default resume_fn for {execution_id}. "
-        f"In production, provide a custom resume_fn that reconstructs "
-        f"the FlatMachine with appropriate config and backends."
+        f"Provide a MachineResumer (e.g. ConfigFileResumer) or a custom "
+        f"resume_fn that reconstructs the FlatMachine with appropriate "
+        f"config and backends."
     )
+
+
+def _resolve_resume(
+    signal_backend,
+    persistence_backend,
+    resumer=None,
+    resume_fn=None,
+):
+    """Return (resumer, resume_fn) with sensible defaults.
+
+    Priority:
+      1. Explicit ``resumer`` — used as-is.
+      2. Explicit ``resume_fn`` — used as-is.
+      3. Neither — fall back to ``_default_resume_fn`` (logs warning).
+    """
+    from .resume import MachineResumer
+    if resumer is not None:
+        return resumer, None
+    if resume_fn is not None:
+        return None, resume_fn
+    return None, _default_resume_fn
 
 
 async def run_once(
     signal_backend,
     persistence_backend,
-    resume_fn=None,
+    resume_fn: Optional[Callable[[str, Any], Coroutine]] = None,
+    *,
+    resumer=None,
 ) -> dict:
     """Process all pending signals and return summary.
+
+    Args:
+        signal_backend: Where signals are stored.
+        persistence_backend: Where machine checkpoints live.
+        resume_fn: Async callback(execution_id, signal_data). Legacy API.
+        resumer: A ``MachineResumer`` instance (preferred over resume_fn).
 
     Returns:
         Dict with channel -> list of resumed execution IDs.
     """
     from .dispatcher import SignalDispatcher
 
+    resolved_resumer, resolved_fn = _resolve_resume(
+        signal_backend, persistence_backend, resumer, resume_fn,
+    )
+
     dispatcher = SignalDispatcher(
         signal_backend=signal_backend,
         persistence_backend=persistence_backend,
-        resume_fn=resume_fn or _default_resume_fn,
+        resume_fn=resolved_fn,
+        resumer=resolved_resumer,
     )
 
     results = await dispatcher.dispatch_all()
@@ -189,19 +225,34 @@ async def run_listen(
     signal_backend,
     persistence_backend,
     socket_path: str = "/tmp/flatmachines/trigger.sock",
-    resume_fn=None,
+    resume_fn: Optional[Callable[[str, Any], Coroutine]] = None,
     stop_event: Optional[asyncio.Event] = None,
+    *,
+    resumer=None,
 ) -> None:
     """Listen on UDS for trigger notifications and dispatch signals.
 
     Runs until stop_event is set or the process is terminated.
+
+    Args:
+        signal_backend: Where signals are stored.
+        persistence_backend: Where machine checkpoints live.
+        socket_path: Path for the Unix domain socket.
+        resume_fn: Async callback(execution_id, signal_data). Legacy API.
+        stop_event: Set to stop the listener.
+        resumer: A ``MachineResumer`` instance (preferred over resume_fn).
     """
     from .dispatcher import SignalDispatcher
+
+    resolved_resumer, resolved_fn = _resolve_resume(
+        signal_backend, persistence_backend, resumer, resume_fn,
+    )
 
     dispatcher = SignalDispatcher(
         signal_backend=signal_backend,
         persistence_backend=persistence_backend,
-        resume_fn=resume_fn or _default_resume_fn,
+        resume_fn=resolved_fn,
+        resumer=resolved_resumer,
     )
 
     # Drain any pending signals before entering listen loop

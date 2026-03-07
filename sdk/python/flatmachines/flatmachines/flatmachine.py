@@ -48,7 +48,9 @@ from .persistence import (
     LocalFileBackend,
     MemoryBackend,
     CheckpointManager,
-    MachineSnapshot
+    ConfigStore,
+    MachineSnapshot,
+    config_hash,
 )
 from .backends import (
     ResultBackend,
@@ -109,6 +111,7 @@ class FlatMachine:
         agent_adapters: Optional[list] = None,
         profiles_file: Optional[str] = None,
         tool_provider=None,
+        config_store: Optional[ConfigStore] = None,
         **kwargs
     ):
         """
@@ -129,6 +132,7 @@ class FlatMachine:
             agent_adapters: List of agent adapters to register (optional)
             profiles_file: Optional profiles.yml path for adapters that use it
             tool_provider: Default ToolProvider for tool_loop states (optional)
+            config_store: Content-addressed config store for cross-SDK resume (optional)
             **kwargs: Override config values
         """
         if Template is None:
@@ -146,6 +150,10 @@ class FlatMachine:
         self._profiles_file = profiles_file or kwargs.pop('_profiles_file', None)
 
         self._load_config(config_file, config_dict)
+
+        # Capture raw config for content-addressed config store
+        self._config_raw: Optional[str] = self._capture_config_raw(config_file, config_dict)
+        self._config_hash: Optional[str] = None  # Set on first checkpoint save
 
         # Allow launcher to override config_dir for launched machines
         if config_dir_override:
@@ -213,6 +221,9 @@ class FlatMachine:
 
         # Tool provider for tool_loop states
         self._tool_provider = tool_provider
+
+        # Config store for cross-SDK resume (content-addressed)
+        self._config_store = config_store
 
         # Current step counter (used by tool loop for checkpoints)
         self._current_step = 0
@@ -325,6 +336,25 @@ class FlatMachine:
             raise ValueError("Must provide config_file or config_dict")
 
         self.config = config
+
+    @staticmethod
+    def _capture_config_raw(
+        config_file: Optional[str],
+        config_dict: Optional[Dict],
+    ) -> Optional[str]:
+        """Capture the raw config as a normalized YAML string.
+
+        For file-based configs, reads the file verbatim.
+        For dict-based configs, serializes to YAML.
+        """
+        if config_file is not None:
+            with open(config_file, "r") as f:
+                return f.read()
+        if config_dict is not None:
+            if yaml is None:
+                return json.dumps(config_dict, indent=2, default=str)
+            return yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
+        return None
 
     def _validate_spec(self) -> None:
         """Validate the spec envelope."""
@@ -686,6 +716,7 @@ class FlatMachine:
             agent_registry=self.agent_registry,
             persistence=self.persistence,
             lock=self.lock,
+            config_store=self._config_store,
             _config_dir=peer_config_dir,
             _execution_id=child_id,
             _parent_execution_id=self.execution_id,
@@ -1547,6 +1578,10 @@ class FlatMachine:
         if "machine" in checkpoint_context and isinstance(checkpoint_context["machine"], MappingProxyType):
             checkpoint_context["machine"] = dict(checkpoint_context["machine"])
 
+        # Store config in content-addressed store on first checkpoint
+        if self._config_hash is None and self._config_raw and self._config_store:
+            self._config_hash = await self._config_store.put(self._config_raw)
+
         snapshot = MachineSnapshot(
             execution_id=self.execution_id,
             machine_name=self.machine_name,
@@ -1562,6 +1597,7 @@ class FlatMachine:
             pending_launches=self._get_pending_intents() if self._pending_launches else None,
             waiting_channel=waiting_channel,
             tool_loop_state=tool_loop_state,
+            config_hash=self._config_hash,
         )
 
         manager = CheckpointManager(self.persistence, self.execution_id)
