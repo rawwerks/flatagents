@@ -318,7 +318,7 @@
  * waiting_channel     - Signal channel this machine is blocked on (v1.2.0)
  */
 
-export const SPEC_VERSION = "2.0.0";
+export const SPEC_VERSION = "2.1.0";
 
 export interface MachineWrapper {
   spec: "flatmachine";
