@@ -316,9 +316,10 @@
  * parent_execution_id - Lineage tracking (v0.4.0)
  * pending_launches    - Outbox pattern (v0.4.0)
  * waiting_channel     - Signal channel this machine is blocked on (v1.2.0)
+ * config_hash         - Content-addressed machine config key for cross-SDK resume (v2.1.0)
  */
 
-export const SPEC_VERSION = "2.1.0";
+export const SPEC_VERSION = "2.2.0";
 
 export interface MachineWrapper {
   spec: "flatmachine";
@@ -461,6 +462,7 @@ export interface MachineSnapshot {
     tool_calls_count: number;
     loop_cost: number;
   };
+  config_hash?: string;
 }
 
 export interface PersistenceConfig {

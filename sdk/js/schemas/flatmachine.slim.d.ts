@@ -1,4 +1,4 @@
-export const SPEC_VERSION = "2.1.0";
+export const SPEC_VERSION = "2.2.0";
 export interface MachineWrapper {
     spec: "flatmachine";
     spec_version: string;
@@ -123,6 +123,7 @@ export interface MachineSnapshot {
         tool_calls_count: number;
         loop_cost: number;
     };
+    config_hash?: string;
 }
 export interface PersistenceConfig {
     enabled: boolean;
