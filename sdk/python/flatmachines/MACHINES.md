@@ -202,8 +202,10 @@ await send_and_notify(signal_backend, trigger_backend, "approval/task-001", {"ap
 
 **Dispatch** (process pending signals, resume waiting machines):
 ```bash
-python -m flatmachines.dispatch_signals --once
-python -m flatmachines.dispatch_signals --listen --socket-path /tmp/flatmachines/trigger.sock
+python -m flatmachines.dispatch_signals --once --resumer config-store
+python -m flatmachines.dispatch_signals --listen --resumer config-store --socket-path /tmp/flatmachines/trigger.sock
+# diagnostics only (no-op resume):
+python -m flatmachines.dispatch_signals --once --allow-noop-resume
 ```
 
 **Backends**: `SignalBackend` (memory, sqlite) × `TriggerBackend` (none, file, socket).

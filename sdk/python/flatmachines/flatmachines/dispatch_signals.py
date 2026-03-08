@@ -6,26 +6,30 @@ and resumes waiting machines.
 
 Usage:
     # One-shot: process all pending signals and exit
-    python -m flatmachines.dispatch_signals --once
+    python -m flatmachines.dispatch_signals --once --resumer config-store
 
     # Long-running: listen on UDS for trigger notifications
-    python -m flatmachines.dispatch_signals --listen
+    python -m flatmachines.dispatch_signals --listen --resumer config-store
 
     # With explicit backends
     python -m flatmachines.dispatch_signals --once \\
+        --resumer config-store \\
         --signal-backend sqlite --db-path ./flatmachines.sqlite \\
         --persistence-backend sqlite --persistence-db-path ./flatmachines.sqlite
 
     # Listen with custom socket path
     python -m flatmachines.dispatch_signals --listen \\
+        --resumer config-store \\
         --socket-path /tmp/flatmachines/trigger.sock
+
+    # Diagnostics only: allow no-op resume behavior
+    python -m flatmachines.dispatch_signals --once --allow-noop-resume
 
 See SIGNAL_TRIGGER_ACTIVATION_BACKENDS.md for activation recipes.
 """
 
 import argparse
 import asyncio
-import json
 import logging
 import sys
 from typing import Any, Callable, Coroutine, Optional
@@ -88,6 +92,50 @@ def _build_parser() -> argparse.ArgumentParser:
         help="UDS path for listen mode (default: /tmp/flatmachines/trigger.sock)",
     )
 
+    # Resume strategy
+    parser.add_argument(
+        "--resumer",
+        choices=["config-store"],
+        help=(
+            "Resume strategy for reconstructing parked machines. "
+            "Required unless --allow-noop-resume is set."
+        ),
+    )
+    parser.add_argument(
+        "--allow-noop-resume",
+        action="store_true",
+        help=(
+            "Allow no-op fallback resume (diagnostics only). "
+            "Without this flag, CLI fails fast when no --resumer is provided."
+        ),
+    )
+
+    # Config-store resumer options
+    parser.add_argument(
+        "--config-store-backend",
+        choices=["auto", "sqlite", "local", "memory"],
+        default="auto",
+        help=(
+            "Config store backend for --resumer config-store "
+            "(default: auto, derived from persistence backend)."
+        ),
+    )
+    parser.add_argument(
+        "--config-store-db-path",
+        help=(
+            "SQLite DB path for config-store backend. "
+            "Defaults to --persistence-db-path (or --db-path)."
+        ),
+    )
+    parser.add_argument(
+        "--config-store-dir",
+        default=".checkpoints",
+        help=(
+            "Directory for local config-store backend "
+            "(default: .checkpoints)."
+        ),
+    )
+
     # Logging
     parser.add_argument(
         "--verbose", "-v",
@@ -134,8 +182,68 @@ def _create_persistence_backend(
         return MemoryBackend()
 
 
+def _create_config_store(
+    backend_type: str,
+    persistence_backend,
+    *,
+    db_path: Optional[str],
+    checkpoints_dir: str,
+):
+    """Create/configure a ConfigStore instance for CLI resumer wiring."""
+    from .persistence import (
+        LocalFileBackend,
+        LocalFileConfigStore,
+        MemoryConfigStore,
+        SQLiteCheckpointBackend,
+    )
+
+    if backend_type == "auto":
+        if hasattr(persistence_backend, "config_store"):
+            return persistence_backend.config_store
+        if isinstance(persistence_backend, SQLiteCheckpointBackend):
+            return persistence_backend.config_store
+        if isinstance(persistence_backend, LocalFileBackend):
+            return LocalFileConfigStore(base_dir=checkpoints_dir)
+        return MemoryConfigStore()
+
+    if backend_type == "sqlite":
+        sqlite_backend = (
+            persistence_backend
+            if isinstance(persistence_backend, SQLiteCheckpointBackend)
+            else SQLiteCheckpointBackend(db_path=db_path or "flatmachines.sqlite")
+        )
+        return sqlite_backend.config_store
+
+    if backend_type == "local":
+        return LocalFileConfigStore(base_dir=checkpoints_dir)
+
+    return MemoryConfigStore()
+
+
+def _create_cli_resumer(args, signal_backend, persistence_backend):
+    """Build a MachineResumer from CLI args, if configured."""
+    if args.resumer != "config-store":
+        return None
+
+    from .resume import ConfigStoreResumer
+
+    config_store_db_path = args.config_store_db_path or args.persistence_db_path or args.db_path
+    config_store_dir = args.config_store_dir or args.checkpoints_dir
+    config_store = _create_config_store(
+        args.config_store_backend,
+        persistence_backend,
+        db_path=config_store_db_path,
+        checkpoints_dir=config_store_dir,
+    )
+
+    return ConfigStoreResumer(signal_backend, persistence_backend, config_store)
+
+
 async def _default_resume_fn(execution_id: str, signal_data: Any) -> None:
     """Fallback resume: logs a warning and does nothing.
+
+    Intended for diagnostics/tests only. CLI users should provide a real
+    resumer strategy (or explicitly opt in via ``--allow-noop-resume``).
 
     Used only when neither a ``MachineResumer`` nor a ``resume_fn`` is
     provided. In practice you should always pass one of:
@@ -276,9 +384,21 @@ async def _async_main(args) -> int:
         checkpoints_dir=args.checkpoints_dir,
     )
 
+    cli_resumer = _create_cli_resumer(args, signal_backend, persistence_backend)
+    if cli_resumer is None and not args.allow_noop_resume:
+        logger.error(
+            "No resume strategy configured. "
+            "Pass --resumer config-store (recommended) or explicitly opt in to "
+            "diagnostic no-op mode with --allow-noop-resume."
+        )
+        return 2
+
     if args.once:
-        results = await run_once(signal_backend, persistence_backend)
-        total = sum(len(ids) for ids in results.values())
+        await run_once(
+            signal_backend,
+            persistence_backend,
+            resumer=cli_resumer,
+        )
         return 0
 
     elif args.listen:
@@ -286,6 +406,7 @@ async def _async_main(args) -> int:
             signal_backend,
             persistence_backend,
             socket_path=args.socket_path,
+            resumer=cli_resumer,
         )
         return 0
 

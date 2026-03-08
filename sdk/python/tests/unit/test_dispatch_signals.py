@@ -9,7 +9,7 @@ import pytest
 
 from flatmachines.signals import MemorySignalBackend
 from flatmachines.persistence import MemoryBackend, CheckpointManager, MachineSnapshot
-from flatmachines.dispatch_signals import run_once, run_listen, _build_parser
+from flatmachines.dispatch_signals import run_once, run_listen, _build_parser, _async_main
 
 
 # ---------------------------------------------------------------------------
@@ -246,3 +246,44 @@ class TestCLIParsing:
 
         args = parser.parse_args(["--once", "-q"])
         assert args.quiet is True
+
+
+class TestCLIRuntime:
+
+    @pytest.mark.asyncio
+    async def test_requires_resume_strategy_by_default(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "--once",
+            "--signal-backend", "memory",
+            "--persistence-backend", "memory",
+        ])
+
+        exit_code = await _async_main(args)
+        assert exit_code == 2
+
+    @pytest.mark.asyncio
+    async def test_allow_noop_resume_escape_hatch(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "--once",
+            "--allow-noop-resume",
+            "--signal-backend", "memory",
+            "--persistence-backend", "memory",
+        ])
+
+        exit_code = await _async_main(args)
+        assert exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_config_store_resumer_via_cli(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "--once",
+            "--resumer", "config-store",
+            "--signal-backend", "memory",
+            "--persistence-backend", "memory",
+        ])
+
+        exit_code = await _async_main(args)
+        assert exit_code == 0

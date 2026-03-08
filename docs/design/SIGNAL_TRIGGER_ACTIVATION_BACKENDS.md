@@ -82,8 +82,8 @@ Purpose:
 ### C) Add dispatcher runtime entrypoint
 
 Add a first-class runner (module/CLI), e.g.:
-- `python -m flatmachines.dispatch_signals --once ...`
-- `python -m flatmachines.dispatch_signals --listen ...`
+- `python -m flatmachines.dispatch_signals --once --resumer config-store ...`
+- `python -m flatmachines.dispatch_signals --listen --resumer config-store ...`
 
 Responsibilities:
 - initialize signal + persistence backends,
