@@ -1,0 +1,19 @@
+{
+  "spec_paths": [
+    "MACHINES.md"
+  ],
+  "test_paths": [
+    "sdk/go/"
+  ],
+  "claude_log_path": null,
+  "initialized_at": "2026-03-09T16:29:09.197068+00:00",
+  "last_commit": null,
+  "last_commit_branch": null,
+  "last_extracted_at": null,
+  "default_model": "openrouter/anthropic/claude-haiku-4-5",
+  "program_models": {},
+  "storage": "dolt",
+  "dolt_remote": null,
+  "mode": "agent-managed",
+  "decision_model": null
+}

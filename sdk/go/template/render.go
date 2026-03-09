@@ -9,6 +9,7 @@ package template
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -237,9 +238,15 @@ func Render(jinjaTemplate string, data map[string]interface{}) (string, error) {
 			return val
 		},
 		"eval": func(expr string, data interface{}) string {
-			// Simplified eval for arithmetic/subscript expressions.
-			// In production, this would use a proper expression evaluator.
-			return expr
+			dataMap, ok := data.(map[string]interface{})
+			if !ok {
+				return fmt.Sprintf("<eval error: data is %T, not map>", data)
+			}
+			result, err := evalExpr(expr, dataMap)
+			if err != nil {
+				return fmt.Sprintf("<eval error: %s>", err)
+			}
+			return fmt.Sprintf("%v", result)
 		},
 	}
 
@@ -274,4 +281,260 @@ func RenderMap(templates map[string]interface{}, data map[string]interface{}) (m
 		}
 	}
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// Expression evaluator for arithmetic and subscript access
+// ---------------------------------------------------------------------------
+
+// evalExpr evaluates a Jinja2 expression that contains arithmetic operators
+// (+, -, *, /) or subscript access (e.g., context.target[context.current|length]).
+//
+// It resolves dotted variable paths against the provided data map and computes
+// the result. This is intentionally limited to the patterns that appear in
+// flatagents/flatmachines configs.
+func evalExpr(expr string, data map[string]interface{}) (interface{}, error) {
+	expr = strings.TrimSpace(expr)
+
+	// Handle subscript access: e.g., context.target[context.current|length]
+	if bracketIdx := strings.Index(expr, "["); bracketIdx > 0 {
+		return evalSubscript(expr, bracketIdx, data)
+	}
+
+	// Handle binary arithmetic: a + b, a - b, a * b, a / b
+	for _, op := range []string{" + ", " - ", " * ", " / "} {
+		if idx := strings.Index(expr, op); idx > 0 {
+			leftExpr := strings.TrimSpace(expr[:idx])
+			rightExpr := strings.TrimSpace(expr[idx+len(op):])
+
+			leftVal, err := evalExpr(leftExpr, data)
+			if err != nil {
+				return nil, err
+			}
+			rightVal, err := evalExpr(rightExpr, data)
+			if err != nil {
+				return nil, err
+			}
+
+			lNum, lOk := toFloat(leftVal)
+			rNum, rOk := toFloat(rightVal)
+			if !lOk || !rOk {
+				// String concatenation for +
+				if op == " + " {
+					return fmt.Sprintf("%v%v", leftVal, rightVal), nil
+				}
+				return nil, fmt.Errorf("cannot perform %q on non-numeric values: %v %s %v", op, leftVal, strings.TrimSpace(op), rightVal)
+			}
+
+			switch op {
+			case " + ":
+				r := lNum + rNum
+				if isWholeNumber(r) {
+					return int64(r), nil
+				}
+				return r, nil
+			case " - ":
+				r := lNum - rNum
+				if isWholeNumber(r) {
+					return int64(r), nil
+				}
+				return r, nil
+			case " * ":
+				r := lNum * rNum
+				if isWholeNumber(r) {
+					return int64(r), nil
+				}
+				return r, nil
+			case " / ":
+				if rNum == 0 {
+					return nil, fmt.Errorf("division by zero")
+				}
+				r := lNum / rNum
+				if isWholeNumber(r) {
+					return int64(r), nil
+				}
+				return r, nil
+			}
+		}
+	}
+
+	// Base case: resolve a single value (variable path or literal)
+	return resolveValue(expr, data)
+}
+
+// evalSubscript handles expressions like context.target[context.current|length].
+func evalSubscript(expr string, bracketIdx int, data map[string]interface{}) (interface{}, error) {
+	baseExpr := strings.TrimSpace(expr[:bracketIdx])
+	rest := expr[bracketIdx+1:]
+	closeBracket := strings.Index(rest, "]")
+	if closeBracket < 0 {
+		return nil, fmt.Errorf("unclosed bracket in expression: %s", expr)
+	}
+	indexExpr := strings.TrimSpace(rest[:closeBracket])
+
+	baseVal, err := resolveValue(baseExpr, data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle |length filter on index expression
+	if strings.Contains(indexExpr, "|length") {
+		parts := strings.SplitN(indexExpr, "|", 2)
+		innerExpr := strings.TrimSpace(parts[0])
+		innerVal, err := resolveValue(innerExpr, data)
+		if err != nil {
+			return nil, err
+		}
+		// Get length of the value
+		idx := lengthOf(innerVal)
+		return subscriptAccess(baseVal, idx)
+	}
+
+	// Try as numeric index
+	indexVal, err := evalExpr(indexExpr, data)
+	if err != nil {
+		return nil, err
+	}
+	if n, ok := toFloat(indexVal); ok {
+		return subscriptAccess(baseVal, int(n))
+	}
+	// Try as string key
+	if s, ok := indexVal.(string); ok {
+		if m, ok := baseVal.(map[string]interface{}); ok {
+			return m[s], nil
+		}
+	}
+	return nil, fmt.Errorf("cannot subscript %T with %T", baseVal, indexVal)
+}
+
+// subscriptAccess indexes into a string or slice by integer index.
+func subscriptAccess(val interface{}, idx int) (interface{}, error) {
+	switch v := val.(type) {
+	case string:
+		if idx < 0 || idx >= len(v) {
+			return nil, fmt.Errorf("string index %d out of range (len=%d)", idx, len(v))
+		}
+		return string(v[idx]), nil
+	case []interface{}:
+		if idx < 0 || idx >= len(v) {
+			return nil, fmt.Errorf("list index %d out of range (len=%d)", idx, len(v))
+		}
+		return v[idx], nil
+	default:
+		return nil, fmt.Errorf("cannot index %T with integer", val)
+	}
+}
+
+// lengthOf returns the length of a string, slice, or map.
+func lengthOf(val interface{}) int {
+	switch v := val.(type) {
+	case string:
+		return len(v)
+	case []interface{}:
+		return len(v)
+	case map[string]interface{}:
+		return len(v)
+	default:
+		return 0
+	}
+}
+
+// resolveValue resolves a single value: a dotted variable path or a literal.
+func resolveValue(expr string, data map[string]interface{}) (interface{}, error) {
+	expr = strings.TrimSpace(expr)
+
+	// Numeric literal
+	if n, err := strconv.ParseFloat(expr, 64); err == nil {
+		if isWholeNumber(n) {
+			return int64(n), nil
+		}
+		return n, nil
+	}
+
+	// Quoted string literal
+	if len(expr) >= 2 {
+		if (expr[0] == '"' && expr[len(expr)-1] == '"') ||
+			(expr[0] == '\'' && expr[len(expr)-1] == '\'') {
+			return expr[1 : len(expr)-1], nil
+		}
+	}
+
+	// Boolean/null literals
+	switch expr {
+	case "true", "True":
+		return true, nil
+	case "false", "False":
+		return false, nil
+	case "null", "None", "nil", "none":
+		return nil, nil
+	}
+
+	// Dotted variable path: context.score, output.tagline, etc.
+	if strings.Contains(expr, ".") {
+		return resolveDotted(expr, data)
+	}
+
+	// Simple variable
+	if val, ok := data[expr]; ok {
+		return val, nil
+	}
+
+	return nil, fmt.Errorf("unknown variable: %s", expr)
+}
+
+// resolveDotted resolves a dotted path like "context.score" against data.
+func resolveDotted(path string, data map[string]interface{}) (interface{}, error) {
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty path")
+	}
+
+	val, ok := data[parts[0]]
+	if !ok {
+		return nil, nil
+	}
+
+	for _, part := range parts[1:] {
+		if val == nil {
+			return nil, nil
+		}
+		switch v := val.(type) {
+		case map[string]interface{}:
+			val, ok = v[part]
+			if !ok {
+				return nil, nil
+			}
+		case map[interface{}]interface{}:
+			val, ok = v[part]
+			if !ok {
+				return nil, nil
+			}
+		default:
+			return nil, nil
+		}
+	}
+	return val, nil
+}
+
+// toFloat converts a value to float64 for arithmetic.
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// isWholeNumber returns true if a float64 has no fractional part.
+func isWholeNumber(f float64) bool {
+	return f == float64(int64(f))
 }
