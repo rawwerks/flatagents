@@ -47,6 +47,7 @@ from .persistence import (
     PersistenceBackend,
     LocalFileBackend,
     MemoryBackend,
+    SQLiteCheckpointBackend,
     CheckpointManager,
     ConfigStore,
     MachineSnapshot,
@@ -59,7 +60,7 @@ from .backends import (
     make_uri,
     get_default_result_backend,
 )
-from .locking import ExecutionLock, LocalFileLock, NoOpLock
+from .locking import ExecutionLock, LocalFileLock, NoOpLock, SQLiteLeaseLock
 from .signals import SignalBackend, TriggerBackend, NoOpTrigger
 from .actions import (
     Action,
@@ -209,6 +210,10 @@ class FlatMachine:
         self.total_api_calls = 0
         self.total_cost = 0.0
 
+        # Config store for cross-SDK resume (content-addressed)
+        # Set before _initialize_persistence so sqlite can auto-wire it.
+        self._config_store = config_store
+
         # Persistence & Locking
         self._initialize_persistence(persistence, lock)
 
@@ -221,9 +226,6 @@ class FlatMachine:
 
         # Tool provider for tool_loop states
         self._tool_provider = tool_provider
-
-        # Config store for cross-SDK resume (content-addressed)
-        self._config_store = config_store
 
         # Current step counter (used by tool loop for checkpoints)
         self._current_step = 0
@@ -248,43 +250,70 @@ class FlatMachine:
         persistence: Optional[PersistenceBackend],
         lock: Optional[ExecutionLock]
     ) -> None:
-        """Initialize persistence and locking components."""
+        """Initialize persistence and locking components.
+
+        Supports declarative backend selection via config:
+            backend: "memory" | "local" | "sqlite"
+
+        For sqlite, reads ``db_path`` from config (falls back to
+        env ``FLATMACHINES_DB_PATH``, then ``flatmachines.sqlite``).
+
+        Raises ``ValueError`` for unrecognized backend types to prevent
+        silent misconfiguration.
+        """
         # Get config
         p_config = self.data.get('persistence', {})
-        # Global features config override (simulated for now, would be in kwargs/settings)
-        # For now, rely on machine.yml or defaults
-        
-        enabled = p_config.get('enabled', True) # Default enabled? Or disable? 
-        # Plan says: "Global Defaults... backend: local".
-        # Let's default to enabled=False for backward compat if not configured? 
-        # Or follow plan default? Plan implies explicit configure.
-        # Let's default to MemoryBackend if enabled but no backend specified
-        
+
+        enabled = p_config.get('enabled', True)
         backend_type = p_config.get('backend', 'memory')
-        
+
+        # Resolve db_path for sqlite (config → env → default)
+        db_path = (
+            p_config.get('db_path')
+            or os.environ.get('FLATMACHINES_DB_PATH')
+            or 'flatmachines.sqlite'
+        )
+
         # Persistence Backend
         if persistence:
             self.persistence = persistence
         elif not enabled:
-            self.persistence = MemoryBackend() # Fallback, unsaved
+            self.persistence = MemoryBackend()
         elif backend_type == 'local':
             self.persistence = LocalFileBackend()
         elif backend_type == 'memory':
             self.persistence = MemoryBackend()
+        elif backend_type == 'sqlite':
+            self.persistence = SQLiteCheckpointBackend(db_path=db_path)
         else:
-            logger.warning(f"Unknown backend '{backend_type}', using memory")
-            self.persistence = MemoryBackend()
-            
+            raise ValueError(
+                f"Unknown persistence backend '{backend_type}'. "
+                f"Supported backends: 'memory', 'local', 'sqlite'."
+            )
+
         # Lock
         if lock:
             self.lock = lock
         elif not enabled:
             self.lock = NoOpLock()
         elif backend_type == 'local':
-            self.lock = LocalFileLock() 
+            self.lock = LocalFileLock()
+        elif backend_type == 'sqlite':
+            self.lock = SQLiteLeaseLock(
+                db_path=db_path,
+                owner_id=self.execution_id,
+                phase="machine",
+            )
         else:
             self.lock = NoOpLock()
-            
+
+        # Auto-wire config_store from SQLite persistence when absent
+        if (
+            self._config_store is None
+            and isinstance(self.persistence, SQLiteCheckpointBackend)
+        ):
+            self._config_store = self.persistence.config_store
+
         # Checkpoint events (default set)
         default_events = ['machine_start', 'state_enter', 'execute', 'state_exit', 'machine_end', 'waiting', 'tool_call']
         self.checkpoint_events = set(p_config.get('checkpoint_on', default_events))

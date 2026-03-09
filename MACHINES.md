@@ -166,8 +166,18 @@ class MyHooks(MachineHooks):
 ## Persistence
 
 ```yaml
-persistence: { enabled: true, backend: local }  # local | memory
+persistence: { enabled: true, backend: local }  # local | memory | sqlite
 ```
+
+SQLite backend (durable, single-file, no external dependencies):
+```yaml
+persistence:
+  enabled: true
+  backend: sqlite
+  db_path: ./flatmachines.sqlite   # optional, defaults to flatmachines.sqlite
+```
+Auto-selects `SQLiteLeaseLock` and `SQLiteConfigStore` — no runner injection needed.
+
 Resume: `machine.execute(resume_from=execution_id)`
 
 ## SDKs
