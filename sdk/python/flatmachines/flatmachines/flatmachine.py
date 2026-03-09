@@ -1339,10 +1339,18 @@ class FlatMachine:
         variables = {"context": context, "input": context}
         agent_input = self._render_dict(input_spec, variables)
 
-        # Restore chain from prior round if available (preserves prefix cache)
+        # Restore chain from prior round only when state+agent identity matches.
+        # This preserves prefix cache for same-state continuation while preventing
+        # cross-state/agent chain bleed.
         saved_chain = context.pop('_tool_loop_chain', None)
-        has_prior_chain = bool(saved_chain)
-        chain: List[Dict[str, Any]] = saved_chain if saved_chain else []
+        saved_chain_state = context.pop('_tool_loop_chain_state', None)
+        saved_chain_agent = context.pop('_tool_loop_chain_agent', None)
+        has_prior_chain = bool(
+            saved_chain
+            and saved_chain_state == state_name
+            and saved_chain_agent == agent_name
+        )
+        chain: List[Dict[str, Any]] = saved_chain if has_prior_chain else []
         turns = 0
         tool_calls_count = 0
         loop_cost = 0.0
@@ -1398,7 +1406,7 @@ class FlatMachine:
                 )
 
             # --- Seed chain on first turn ---
-            if turns == 1 and result.rendered_user_prompt:
+            if turns == 1 and not has_prior_chain and result.rendered_user_prompt:
                 chain.append({"role": "user", "content": result.rendered_user_prompt})
 
             # --- Build assistant message and append to chain ---
@@ -1540,8 +1548,10 @@ class FlatMachine:
                 for msg in steering:
                     chain.append(msg)
 
-        # Save chain to context for potential continuation (preserves prefix cache)
+        # Save chain identity for potential continuation (preserves prefix cache)
         context['_tool_loop_chain'] = chain
+        context['_tool_loop_chain_state'] = state_name
+        context['_tool_loop_chain_agent'] = agent_name
 
         # --- Build output ---
         output = {

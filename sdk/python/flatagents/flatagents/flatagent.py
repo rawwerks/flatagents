@@ -686,6 +686,11 @@ class FlatAgent:
         # Render prompts
         system_prompt = self._render_system_prompt(input_data, tools_prompt=tools_prompt, tools=_mcp_tools)
         user_prompt = self._render_user_prompt(input_data, tools_prompt=tools_prompt, tools=_mcp_tools)
+        rendered_user_prompt = user_prompt
+        if messages is not None and not input_data:
+            # Continuation call without fresh input should not report a synthetic
+            # rendered prompt (it wasn't added to request messages).
+            rendered_user_prompt = None
 
         # Build messages
         if messages:
@@ -854,7 +859,7 @@ class FlatAgent:
                     rate_limit=rate_limit_info,
                     finish_reason=FinishReason.ERROR,
                     raw_response=getattr(e, 'response', None),
-                    rendered_user_prompt=user_prompt,
+                    rendered_user_prompt=rendered_user_prompt,
                 )
 
         # Track usage
@@ -904,7 +909,7 @@ class FlatAgent:
             usage=usage_info,
             rate_limit=rate_limit_info,
             finish_reason=finish_reason,
-            rendered_user_prompt=user_prompt,
+            rendered_user_prompt=rendered_user_prompt,
         )
     
     def _extract_cache_tokens(self, usage: Any) -> tuple[int, int]:
